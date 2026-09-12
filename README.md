@@ -8,16 +8,15 @@ A powershell script that exports an offline, single-file HTML link directory for
 ## How it works
 
 ```
-.\Build-Topology.ps1              # interactive menu
-.\Build-Topology.ps1 -Export      # write the starter config
-.\Build-Topology.ps1 -Validate    # check the config, write nothing
-.\Build-Topology.ps1 -Force       # build the HTML, overwriting any existing file
+.\Big-IP-Reach.ps1             # interactive menu
+.\Big-IP-Reach.ps1 -Export      # write the starter config
+.\Big-IP-Reach.ps1 -Validate    # check the config, write nothing
+.\Big-IP-Reach.ps1 -Force       # build the HTML, overwriting any existing file
 ```
 
 ## Requirements
 
 - Windows PowerShell 5.1 or PowerShell 7 or greater.
-- A text editor for the config.
 
 ## The config format
 
