@@ -1,6 +1,6 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. This is just a tool to easily create an offline (or hosted) html file to map an organizations entire Big-IP topology with links to all management interfaces. Most orgs share a bookmarks.html file; some host a static page with plain links. This allows for a bit more functionality with regard to site selection and searching.
+A powershell script that exports an offline, single-file HTML link directory for reaching an organizations F5 BIG-IP management interfaces. This is just a tool to easily create an offline (or hosted) html file to map an organizations entire Big-IP topology with links to all management interfaces. Most orgs share a bookmarks.html file; some host a static page with plain links. This allows for a bit more functionality with regard to site selection and searching.
 
 <img width="1591" height="1295" alt="Image" src="https://github.com/user-attachments/assets/ac43d668-875a-48f3-be24-3fa36880bcbd" />
 <img width="2321" height="1321" alt="Image" src="https://github.com/user-attachments/assets/e0dc8d53-1ceb-4e1c-8589-44f5910f4079" />
