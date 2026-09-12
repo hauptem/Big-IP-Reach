@@ -1,6 +1,6 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. This is just a tool to easily create an offline (or hosted) file to an organizations entire Big-IP topology. Most orgs share a bookmarks.html file... some host a static page with plain links.
+An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. This is just a tool to easily create an offline (or hosted) file to an organizations entire Big-IP topology. Most orgs share a bookmarks.html file... some host a static page with plain links... most are boring with no functionality at all.
 
 ## How it works
 
