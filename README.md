@@ -2,9 +2,9 @@
 
 An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. This is just a tool to easily create an offline (or hosted) file to an organizations entire Big-IP topology. Most orgs share a bookmarks.html file; some host a static page with plain links. This allows for a bit more functionality with regard to site selection and searching.
 
-## How it works
+<img width="1591" height="1295" alt="Image" src="https://github.com/user-attachments/assets/ac43d668-875a-48f3-be24-3fa36880bcbd" />
 
-The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. 
+## How it works
 
 ```
 .\Build-Topology.ps1              # interactive menu
