@@ -1,48 +1,52 @@
 # =============================================================================
 # Big-IP Reach - F5 BIG-IP Management Link tool
 # =============================================================================
-# Version: 1.0
+# Version: 1.1
 # Author: Eric Haupt
 # Released under the MIT License. See LICENSE file for details.
 # https://github.com/hauptem/F5-Big-IP-Reach
 #
 # Requirements: PowerShell 5.1+, BIG-IP TMOS 17.x or higher
 #
-# USAGE:
-#   .\Big-IP-Reach.ps1
+# Reads topology.conf, validates it, and writes BIG-IP_Topology.html: a
+# self-contained, offline page that lists every BIG-IP device as a link,
+# grouped by site, cloud provider, and BIG-IQ. The HTML boilerplate and a
+# starter config are embedded in this script. Files are written next to the
+# script unless a path is given.
 #
-#    Build a single-file BIG-IP topology page from a text template.
+# USAGE
+#   .\Big-IP-Reach.ps1                 Interactive menu (also -Interactive).
+#   .\Big-IP-Reach.ps1 -Export         Write the starter topology.conf.
+#   .\Big-IP-Reach.ps1 -Validate       Check the config; write nothing.
+#   .\Big-IP-Reach.ps1 -Force          Build, overwriting the output file.
 #
-# .DESCRIPTION
-#    Big-IP-Reach.ps1 reads topology.conf, validates it, and writes
-#    BIG-IP_Topology.html: a self-contained, offline HTML page that lists every
-#    BIG-IP device as a link, grouped by site.
+#   -InputFile   Config to read (or write with -Export). Default topology.conf.
+#   -OutputFile  HTML file to write. Default BIG-IP_Topology.html.
+#   -Title       Browser tab and header text. Default "BIG-IP Topology".
 #
-#    TEMPLATE FORMAT
-#    One record per line:   id|category|value[|extra[|extra]]
-#    Blank lines and lines beginning with # are ignored. Fields are trimmed.
+#   Exit codes: 0 success, 1 validation errors, 2 file or argument errors.
 #
-#     id        Block tag: lowercase letters, digits, hyphens; starts with a
-#                letter. The first line naming an id creates the block. Blocks
-#                appear on the page in order of first appearance. "all" is
-#                reserved.
+# TEMPLATE FORMAT
+# One record per line:   id|category|value[|extra[|extra]]
+# Blank lines and lines beginning with # are ignored. Fields are trimmed.
 #
-#     category  type      site | cloud | bigiq          Default site. One bigiq.
-#                name      Display label                 Required, once.
-#                enabled   true | false                  Default true.
-#                gtm       true | false                  Show GTM band. Default false.
-#                tenant    zone|device[|vcmp-host]       Site only. Zone is free text.
-#                host      device                        Site only. vCMP host.
-#                gtmdev    device                        Site or cloud. GTM device.
-#                device    device                        Cloud or bigiq.
+#   id        Block tag: lowercase letters, digits, hyphens; starts with a
+#             letter. The first line naming an id creates the block. Blocks
+#             appear on the page in order of first appearance. "all" is
+#             reserved.
 #
-#      device    An FQDN, an IPv4 address, or an https:// URL. The link opens
-#                https://<device>. The shown name is the FQDN's first label or
-#                the IP. Override with   Shown Name=device
+#   category  type      site | cloud | bigiq          Default site. One bigiq.
+#             name      Display label                 Required, once.
+#             enabled   true | false                  Default true.
+#             gtm       true | false                  Show GTM band. Default false.
+#             tenant    zone|device[|vcmp-host]       Site only. Zone is free text.
+#             host      device                        Site only. vCMP host.
+#             gtmdev    device                        Site or cloud. GTM device.
+#             device    device                        Cloud or bigiq.
 #
-#    VALIDATION
-#    Errors stop the build and nothing is written. Warnings are printed and the
-#    build continues. Every message carries the template line number.
+#   device    An FQDN, an IPv4 address, or an https:// URL. The link opens
+#             https://<device>. The shown name is the FQDN's first label or
+#             the IP. Override with   Shown Name=device
 #
 # =============================================================================
 #Requires -Version 5.1
@@ -82,7 +86,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:Version    = '1.0'
+$script:Version    = '1.1'
 $script:ScriptDir  = Split-Path -Parent $PSCommandPath
 $script:DefaultIn  = Join-Path $script:ScriptDir 'topology.conf'
 $script:DefaultOut = Join-Path $script:ScriptDir 'BIG-IP_Topology.html'
@@ -93,161 +97,8 @@ $script:Utf8       = New-Object System.Text.UTF8Encoding($false)
 $script:HtmlHead = @'
 <!DOCTYPE html>
 <!--
-  =============================================================================
-  BIG-IP Topology  v1.0
-  =============================================================================
-  Single-file offline HTML page listing BIG-IP devices as links. No external
-  resources, no network calls, no browser storage.
-
-  WHERE TO EDIT
-    EDIT     The data blocks under the "EDITABLE DATA" banner. Each site,
-             each cloud provider, and BIG-IQ is its own <script> tag. Every
-             routine change (add a site, disable a site, add a GTM, rename a
-             device, change an FQDN) is made there and only there. A broken
-             block removes only its own card and is reported on the page.
-    EDIT     The logo <img> in <header>, marked "LOGO".
-    OPTIONAL The palette at the top of <style> if colours must change.
-    DO NOT   Touch anything below the "RENDER" banner in <script>, or any
-             CSS below the palette. Nothing there needs to change for data
-             edits.
-
-  FILE LAYOUT
-    1. <style>   Palette (editable), then layout rules (leave alone).
-    2. <header>  Logo (editable), title, and two empty containers that the
-                 script fills with buttons and cards.
-    3. <script>  EDITABLE DATA: one tag per site / provider / BIG-IQ.
-                 RENDER: a final tag that draws the page. Leave alone.
-
-  AFTER EVERY EDIT
-    Open the file in a browser and confirm:
-      - The page renders and the new or changed card appears.
-      - No device name is red. Red means the entry has no fqdn.
-      - No band reads "Unassigned zone". That means a tenant has no zone.
-      - No red notice at the top of the page. The notice means one data
-        block has a syntax error (a lost comma or quote); that card is
-        skipped and the notice gives the line number.
-  =============================================================================
--->
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>__PAGE_TITLE__</title>
-<style>
-/* ---------------------------------------------------------------------------
-   PALETTE (editable). Values follow the F5 TMUI configuration utility.
-   To change a colour, change it here. Everything below this block is
-   layout and should not need editing.
-   --------------------------------------------------------------------------- */
-:root{
-  --bg:#cfcecb;                                          /* page canvas */
-  --ink:#333; --muted:#666; --line:#8f8f8f;              /* text and rules */
-  --header:linear-gradient(to bottom,#777 0%,#3b3b3b 100%);     /* top bar */
-  --section:linear-gradient(to bottom,#728192 0%,#525e69 100%); /* card title bars */
-  --section-ink:#ffe375;                                 /* yellow card title text */
-  --input:#fff; --input-line:#ccc; --focus:#6ca612;      /* filter box */
-  --bad:#A3001F;                                         /* red: data error marker */
-  --shadow:0 2px 6px rgba(0,0,0,.28);
-  --mono:'Courier New',monospace; --sans:Roboto,'Helvetica Neue',Arial,sans-serif;
-}
-
-/* ===========================================================================
-   LAYOUT RULES. No edits needed for data or colour changes.
-   =========================================================================== */
-/* Page frame */
-*{box-sizing:border-box}
-/* Always reserve the vertical scrollbar so content never shifts when it appears. */
-html{overflow-y:scroll;scrollbar-gutter:stable}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans)}
-main{padding:20px 24px 40px;margin:0 auto}
-/* Generic hide class used by the filter and button logic. */
-.hide{display:none}
-
-/* ---------------------------------------------------------------------------
-   Header bar. Sticky. Logo, title and button grid never shrink; only the
-   filter box gives up width. Below ~980px the bar scrolls sideways inside
-   itself rather than widening the page.
-   --------------------------------------------------------------------------- */
-header{background:var(--header);color:#fff;padding:8px 24px;display:flex;align-items:flex-start;gap:16px;box-shadow:var(--shadow);position:sticky;top:0;z-index:5}
-header .logo{width:50px;height:auto;display:block;flex:none;align-self:flex-start}
-header h1{margin:0;font-size:20px;font-weight:normal;letter-spacing:.5px;white-space:nowrap;flex:none;align-self:flex-start;height:50px;display:flex;align-items:center}
-
-/* Site buttons. Fixed 168x24, wrapping to as many rows as the header needs.
-   Long labels shrink to fit (see the render script) rather than clipping. */
-header nav{display:flex;flex-wrap:wrap;gap:6px;margin-left:12px;flex:1 1 auto;min-width:0}
-header nav a{color:#fff;text-decoration:none;font:600 11px/1 var(--sans);letter-spacing:.3px;text-transform:uppercase;flex:none;width:168px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;white-space:nowrap;overflow:hidden;border:1px solid #6e6e6d;border-radius:4px;background:linear-gradient(to bottom,#858584,#767675);box-shadow:0 1px 2px rgba(0,0,0,.3)}
-header nav a:hover{background:linear-gradient(to bottom,#767675,#666665)}
-header nav a.on{background:linear-gradient(to bottom,#78b81a,#5a9010);border-color:#4e7d0e;color:#fff}  /* selected: F5 green */
-
-/* Filter box. Fixed 220px, pinned to the right edge of the header. */
-#filter{flex:none;width:220px;margin-left:auto;align-self:flex-start;padding:5px 8px;font:13px var(--mono);background:var(--input);border:1px solid var(--input-line);color:var(--ink)}
-#filter::placeholder{font-style:italic;color:#999}
-#filter:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px rgba(108,166,18,.1)}
-
-/* ---------------------------------------------------------------------------
-   Card groups and grid. Sites have no heading; Cloud and BIG-IQ do.
-   Columns: 4 above 1320px, 3 above 980px, 2 above 640px, else 1.
-   --------------------------------------------------------------------------- */
-.group{margin:0 0 22px}
-.group>h2{margin:0 0 12px;font:normal 16px var(--sans);letter-spacing:.5px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,var(--card,320px));gap:16px;justify-content:center}
-@media (max-width:640px){.grid{grid-template-columns:1fr}}
-
-/* ---------------------------------------------------------------------------
-   Cards. One per site, cloud provider, or BIG-IQ. White body, slate title bar.
-   --------------------------------------------------------------------------- */
-.device{background:#fff;box-shadow:var(--shadow);border-radius:4px;overflow:hidden}
-.device>h3{margin:0;padding:10px 14px;background:var(--section);color:var(--section-ink);font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px}
-.device>h3 .sub{color:#fff;font-weight:normal;font-size:12px;margin-left:auto;opacity:.85}  /* optional right-aligned subtitle */
-
-/* Table rows. No header row, no zebra striping. Long names truncate with an ellipsis. */
-table{border-collapse:collapse;width:100%;background:#fff;table-layout:fixed}
-td{padding:5px 8px;border-bottom:1px solid #e9e8e5;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Band rows: zone / vCMP Hosts / GTM section labels within a card. */
-tbody tr.zone td{background:#ebeae7;color:#333;font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.4px;padding:5px 8px}
-/* Device links look like plain text until hovered, as in TMUI list views. */
-td a{color:#3d6382;text-decoration:none}
-td a:hover{color:#28455c;text-decoration:underline}
-/* Entry with no fqdn or url: rendered red and unlinked so the data error is visible. */
-td .nolink{color:var(--bad)}
-/* Notice shown at the top of the page when a data block failed to parse. */
-.parse-error{margin:0 0 16px;padding:8px 12px;background:#FBDCE1;color:var(--bad);border:1px solid var(--bad);border-radius:4px;font:600 12px var(--sans)}
-</style>
-</head>
-<body>
-<header>
-  <!-- LOGO (editable).
-       The header image is embedded as base64 so the page stays a single
-       offline file. To replace it:
-         1. Convert a PNG to base64. In PowerShell:
-              [Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\logo.png')) | Set-Clipboard
-            (or use any base64 tool; the output is one long line of text)
-         2. In the <img> tag below, select everything between the quotes
-            after  src=  and paste over it:  data:image/png;base64,<pasted text>
-         3. Keep the rest of the tag exactly as is. The CSS scales the image
-            to 50px wide, so any reasonable PNG size works.
-       Rebuilding from topology.conf writes the logo stored inside
-       Build-Topology.ps1, so either re-paste after each rebuild or make the
-       same edit once inside the script (search it for  img class="logo"). -->
-  <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='51' height='53'%3E%3Crect width='51' height='53' rx='6' fill='%23e21d38'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' dominant-baseline='middle' font-family='Arial' font-weight='700' font-size='26' fill='%23fff'%3EF5%3C/text%3E%3C/svg%3E" alt="F5">
-  <h1>__PAGE_TITLE__</h1>
-  <nav id="nav"></nav>            <!-- filled by render() -->
-  <input id="filter" type="search" placeholder="filter" autocomplete="off">
-</header>
-<main id="main"></main>          <!-- filled by render() -->
-
-<!--
   ============================================================================
-   EDITABLE DATA
-   Everything the page shows comes from the blocks below. Each site, each
-   cloud provider, and BIG-IQ sits in its own <script> tag. A syntax error
-   in one tag only removes that one card; every other card still renders,
-   and the page shows a red notice naming the block that failed.
-
-   The three registries SITES, CLOUD and BIGIQ are declared once, just
-   below this comment, and must stay above the data blocks. Do not add a
-   second declaration.
-
+  BIG-IP Topology
    ...........................................................................
    HOW TO
    ...........................................................................
@@ -315,7 +166,7 @@ td .nolink{color:var(--bad)}
    bigiq block BIGIQ = { ... };  One card and one button under BIG-IQ.
        id, name, enabled as above.  devices[]  { name, fqdn }.
 
-   Every device needs name and fqdn. Link target is https://<fqdn> unless
+   Every device needs a name and fqdn. Link target is https://<fqdn> unless
    url is given. A device with neither fqdn nor url is drawn red and
    unlinked.
 
@@ -332,9 +183,109 @@ td .nolink{color:var(--bad)}
    - A block that fails to parse is reported in red at the top of the page;
      the browser console (F12) gives the line.
   ============================================================================
+  LOGO
+  Replace the base64 value in the logo <img> src (in the header below) with
+  your own PNG, as   data:image/png;base64,<data>   . 
+
+  STYLES
+  The colour palette is at the top of <style>. Layout rules below it do not
+  need editing.
+  ============================================================================
 -->
-<script>
-/* Registries. Declared once. Data blocks below push into them. */
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__PAGE_TITLE__</title>
+<style>
+/* ---------------------------------------------------------------------------
+   PALETTE (editable). Values follow the F5 TMUI configuration utility.
+   To change a colour, change it here. Everything below this block is
+   layout and should not need editing.
+   --------------------------------------------------------------------------- */
+:root{
+  --bg:#cfcecb;                                          /* page canvas */
+  --ink:#333; --muted:#666; --line:#8f8f8f;              /* text and rules */
+  --header:linear-gradient(to bottom,#777 0%,#3b3b3b 100%);     /* top bar */
+  --section:linear-gradient(to bottom,#728192 0%,#525e69 100%); /* card title bars */
+  --section-ink:#ffe375;                                 /* yellow card title text */
+  --input:#fff; --input-line:#ccc; --focus:#6ca612;      /* filter box */
+  --bad:#A3001F;                                         /* red: data error marker */
+  --shadow:0 2px 6px rgba(0,0,0,.28);
+  --mono:'Courier New',monospace; --sans:Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+
+/* ===========================================================================
+   LAYOUT RULES. No edits needed for data or colour changes.
+   =========================================================================== */
+/* Page frame */
+*{box-sizing:border-box}
+/* Always reserve the vertical scrollbar so content never shifts when it appears. */
+html{overflow-y:scroll;scrollbar-gutter:stable}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans)}
+main{padding:20px 24px 40px;margin:0 auto}
+/* Generic hide class used by the filter and button logic. */
+.hide{display:none}
+header{background:var(--header);color:#fff;padding:8px 24px;display:flex;align-items:flex-start;gap:16px;box-shadow:var(--shadow);position:sticky;top:0;z-index:5}
+header img{height:50px;width:auto;max-width:120px;object-fit:contain;object-position:left center;display:block;flex:none;align-self:flex-start}
+header h1{margin:0;font-size:20px;font-weight:normal;letter-spacing:.5px;white-space:nowrap;flex:none;align-self:flex-start;height:50px;display:flex;align-items:center}
+
+/* Site buttons. Fixed 168x24 */
+header nav{display:flex;flex-wrap:wrap;gap:6px;margin-left:12px;flex:1 1 auto;min-width:0}
+header nav a{color:#fff;text-decoration:none;font:600 11px/1 var(--sans);letter-spacing:.3px;text-transform:uppercase;flex:none;width:168px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;white-space:nowrap;overflow:hidden;border:1px solid #6e6e6d;border-radius:4px;background:linear-gradient(to bottom,#858584,#767675);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+header nav a:hover{background:linear-gradient(to bottom,#767675,#666665)}
+header nav a.on{background:linear-gradient(to bottom,#78b81a,#5a9010);border-color:#4e7d0e;color:#fff}  /* selected: F5 green */
+
+/* Filter box. Fixed 220px, pinned to the right edge of the header. */
+#filter{flex:none;width:220px;margin-left:auto;align-self:flex-start;padding:5px 8px;font:13px var(--mono);background:var(--input);border:1px solid var(--input-line);color:var(--ink)}
+#filter::placeholder{font-style:italic;color:#999}
+#filter:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px rgba(108,166,18,.1)}
+
+/* ---------------------------------------------------------------------------
+   Card groups and grid. 
+   --------------------------------------------------------------------------- */
+.group{margin:0 0 22px}
+.group>h2{margin:0 0 12px;font:normal 16px var(--sans);letter-spacing:.5px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,var(--card,320px));gap:16px;justify-content:center}
+@media (max-width:640px){.grid{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------------------
+   Cards. One per site, cloud provider, or BIG-IQ. White body, slate title bar.
+   --------------------------------------------------------------------------- */
+.device{background:#fff;box-shadow:var(--shadow);border-radius:4px;overflow:hidden}
+.device>h3{margin:0;padding:10px 14px;background:var(--section);color:var(--section-ink);font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px}
+.device>h3 .sub{color:#fff;font-weight:normal;font-size:12px;margin-left:auto;opacity:.85}  /* optional right-aligned subtitle */
+
+/* Table rows. No header row, no zebra striping. Long names truncate with an ellipsis. */
+table{border-collapse:collapse;width:100%;background:#fff;table-layout:fixed}
+td{padding:5px 8px;border-bottom:1px solid #e9e8e5;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Band rows: zone / vCMP Hosts / GTM section labels within a card. */
+tbody tr.zone td{background:#ebeae7;color:#333;font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.4px;padding:5px 8px}
+/* Device links look like plain text until hovered, as in TMUI list views. */
+td a{color:#3d6382;text-decoration:none}
+td a:hover{color:#28455c;text-decoration:underline}
+/* Entry with no fqdn or url: rendered red and unlinked so the data error is visible. */
+td .nolink{color:var(--bad)}
+/* Notice shown at the top of the page when a data block failed to parse. */
+.parse-error{margin:0 0 16px;padding:8px 12px;background:#FBDCE1;color:var(--bad);border:1px solid var(--bad);border-radius:4px;font:600 12px var(--sans)}
+</style>
+</head>
+<body>
+<header>
+  <!-- LOGO: see the LOGO note in the banner at the top of this file. -->
+  <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='51' height='53'%3E%3Crect width='51' height='53' rx='6' fill='%23e21d38'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' dominant-baseline='middle' font-family='Arial' font-weight='700' font-size='26' fill='%23fff'%3EF5%3C/text%3E%3C/svg%3E" alt="F5">
+  <h1>__PAGE_TITLE__</h1>
+  <nav id="nav"></nav>
+  <input id="filter" type="search" placeholder="filter" autocomplete="off">
+</header>
+<main id="main"></main>
+
+<!--
+  Data blocks. Each site, cloud provider, and BIG-IQ is emitted as its own
+  <script> tag that pushes onto SITES / CLOUD or assigns BIGIQ. 
+  Editing guidance is in the banner at the top of this file.
+--><script>
 const SITES = [], CLOUD = [];
 let BIGIQ = null;
 /* Records any data block that fails to parse so the page can report it. */
@@ -346,7 +297,6 @@ window.addEventListener('error', e => {
 '@
 
 $script:HtmlTail = @'
-<!-- ====================== RENDER (do not edit) ====================== -->
 <script>
 /* ============================================================================
    RENDER. Everything from here to the end of the file draws the page from
@@ -364,7 +314,7 @@ const url = d => d.url || ('https://' + d.fqdn);
 /* One device row. data-k holds the lowercase text the filter matches on.
    Entries with neither fqdn nor url render as red plain text. */
 function row(d) {
-  return `<tr data-k="${esc([d.name, d.fqdn, d.zone, d.host].filter(Boolean).join(' ').toLowerCase())}">
+  return `<tr data-k="${esc([d.name, d.fqdn, d.zone].filter(Boolean).join(' ').toLowerCase())}">
     <td>${d.fqdn || d.url
       ? `<a href="${esc(url(d))}" target="_blank" title="${esc(d.fqdn || d.url)}">${esc(d.name)}</a>`
       : `<span class="nolink" title="no fqdn or url in data">${esc(d.name)}</span>`}</td></tr>`;
@@ -456,7 +406,6 @@ function render() {
   document.getElementById('main').innerHTML = html;
   sizeCards();
 
-  /* One button per card, plus an "All" button that clears the selection. */
   const nav = document.getElementById('nav');
   const items = [{id:'all', name:'All'}, ...sites, ...cloud, ...bigiq];
   nav.innerHTML = items.map(x => `<a href="#" data-id="${esc(x.id)}" title="${esc(x.name)}"${x.id === 'all' ? ' class="on"' : ''}>${esc(x.name)}</a>`).join('');
@@ -498,36 +447,41 @@ function toggleSelect(id) {
 const norm = t => t.toLowerCase().replace(/[\s_-]+/g, '');
 
 function apply() {
-  /* Split the query into space-separated terms; a row matches if ANY term is
-     found (boolean OR). Each term is normalised the same way as the keys. */
+  /* The query is a comma-separated list of groups; a row matches if it
+     satisfies ANY group (OR across commas). Within a group, space-separated
+     terms must ALL be found (AND within a group). So  nash app  narrows to
+     Nashville's app rows, while  mumbai, cairo  gathers both cities.
+     Each term matches the row key or the card title, so a title word (a site
+     name) can be one of the AND terms. */
   const raw = document.getElementById('filter').value;
-  const terms = raw.split(/\s+/).map(norm).filter(Boolean);
-  const q = terms.length > 0;
+  const groups = raw.split(',')
+    .map(g => g.split(/\s+/).map(norm).filter(Boolean))
+    .filter(g => g.length > 0);
+  const q = groups.length > 0;
   const showAll = selected.has('all');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
-    /* If any term matches the card title, keep every row in that card. */
     const title = norm(card.querySelector('h3').textContent);
-    const titleHit = q && terms.some(t => title.includes(t));
+    /* A group is title-only when every one of its terms is in the card title;
+       such a group keeps the whole card (e.g. a bare site name). */
+    const titleOnly = q && groups.some(g => g.every(t => title.includes(t)));
     let any = false;
     card.querySelectorAll('tbody').forEach(tb => {
-      /* Walk rows; a band is hidden when nothing beneath it survived. */
       let currentBand = null, kept = 0;
       for (const tr of tb.rows) {
         if (tr.classList.contains('zone')) {
-          if (currentBand) currentBand.classList.toggle('hide', q && !titleHit && kept === 0);
+          if (currentBand) currentBand.classList.toggle('hide', q && !titleOnly && kept === 0);
           currentBand = tr; kept = 0; continue;
         }
-        /* A row matches when any term is found in the row key (or the title). */
+        /* Row matches if any group's terms are all found in row key or title. */
         const key = norm(tr.dataset.k || '');
-        const hit = !q || titleHit || terms.some(t => key.includes(t));
+        const hit = !q || groups.some(g => g.every(t => key.includes(t) || title.includes(t)));
         tr.classList.toggle('hide', !hit);
         if (hit) { kept++; any = true; }
       }
-      if (currentBand) currentBand.classList.toggle('hide', q && !titleHit && kept === 0);
+      if (currentBand) currentBand.classList.toggle('hide', q && !titleOnly && kept === 0);
     });
-    /* Card hidden if another button is selected, or the filter emptied it. */
     card.classList.toggle('hide', (!showAll && !selected.has(card.id)) || (q && !any));
   });
   /* Group headings (Cloud, BIG-IQ) hide when none of their cards are visible. */
@@ -557,7 +511,7 @@ render();
 '@
 
 $script:ConfTemplate = @'
-# topology.conf  -  source file for Build-Topology.ps1
+# topology.conf  -  source file for Big-IP-Reach.ps1
 #
 # One fact per line:   id|category|value[|extra]
 # Lines starting with # are comments. Blank lines are ignored.
@@ -571,8 +525,7 @@ $script:ConfTemplate = @'
 #           gtm       true | false. Shows the GTM band.
 #           tenant    Tenant (vCMP guest):  id|tenant|ZONE|fqdn[|vcmp-host]
 #                     ZONE is free text; each zone gets a band on the card,
-#                     in the order first seen. The optional vCMP host name is
-#                     not shown but the page filter matches on it.
+#                     in the order first seen. 
 #           host      vCMP host                 (site only)
 #           gtmdev    GTM device                (site, cloud)
 #           device    Device                    (cloud, bigiq)
@@ -581,7 +534,6 @@ $script:ConfTemplate = @'
 #           Shown name is the first label of the FQDN (or the IP).
 #           To show a different name:   Shown Name=fqdn
 #
-# Only Site 1, AWS, Azure and BIG-IQ ship enabled. Sites 2-12 and GCP/OCI are
 # disabled spares: set enabled|true on the ones you use.
 # Delete any block you will never use, or leave it disabled.
 
@@ -1234,7 +1186,7 @@ function Invoke-Menu {
     while ($true) {
         Clear-Host
         Write-Host ''
-        Write-Host "  BIG-IP Topology Builder  v$($script:Version)" -ForegroundColor Cyan
+        Write-Host "  BIG-IP Reach v$($script:Version)" -ForegroundColor Cyan
         Write-Host '  -----------------------------' -ForegroundColor Cyan
         Write-Host ''
         Write-Line '1)  Export Template'
