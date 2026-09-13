@@ -71,8 +71,8 @@ bigiq|device|10.0.0.6
 
 ## The page
 
-- **Buttons** Click one to show that site; Ctrl-click (or Cmd-click) to add or remove sites for multi-selection. `All` clears the selection.
-- **The filter box** narrows the page as you type, matching device names, FQDNs, zones, hosts, and card titles. Terms separated by spaces are OR'd. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
+- **Buttons** across the header select a site, cloud provider, or BIG-IQ. Plain click shows one; Ctrl-click (or Cmd-click) adds or removes cards for a multi-selection. `All` clears the selection.
+- **The filter box** narrows the page as you type, matching device names, FQDNs, zones, hosts, and card titles. Space-separated terms narrow (AND): `nashville app` shows Nashville's app devices. Comma-separated groups are OR'd: `mumbai, cairo` shows both. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
 
 ## License
 
