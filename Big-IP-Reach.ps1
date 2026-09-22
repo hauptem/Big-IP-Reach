@@ -202,9 +202,9 @@ $script:HtmlHead = @'
   USING THE PAGE
   Buttons     One per site, cloud provider, and BIG-IQ. Click to show that
               card alone. Ctrl-click (Cmd-click) adds or removes cards from a
-              multi-selection. All clears the selection. The selection has
-              priority: the filter narrows within it, and a site or group
-              word naming no selected card is ignored.
+              multi-selection. All clears the selection. Site or group words
+              in the filter add to the selection, so three selected sites
+              plus  cloud iq  show all five cards.
   Filter      Matches device names, FQDNs, zones and card titles as you type.
               Words that name a site pick sites (several OR together); the
               group words  sites, cloud, bigiq  (or iq) pick a whole group.
@@ -571,27 +571,29 @@ function apply() {
     }
     if (g.length) groups.push(g);
   }
-  /* The button selection has priority. Scope words in the filter narrow
-     within it; a scope word that names no selected card is dropped rather
-     than emptying the page, so  cloud iq  over three selected sites leaves
-     those sites showing. */
-  const showAll = selected.has('all');
-  const chosen = showAll ? null : [...document.querySelectorAll('.device')].filter(c => selected.has(c.id)).map(scopeOf);
-  const inSelection = t => !chosen || chosen.some(title => title.includes(t));
   let carry = [];
   const parsed = groups.map(g => {
-    const sites = g.filter(x => x.site && inSelection(x.t)).map(x => x.t), terms = g.filter(x => !x.site).map(x => x.t);
+    const sites = g.filter(x => x.site).map(x => x.t), terms = g.filter(x => !x.site).map(x => x.t);
     if (sites.length) carry = sites;
     return { sites: sites.length ? sites : carry, terms };
   });
   const q = parsed.length > 0 || negSites.length > 0 || negRows.length > 0;
+  /* Selected buttons and filter scope words add together: a card shows if
+     it is selected or named in the filter, so three selected sites plus
+     cloud iq  show all five cards. Row terms narrow every card in that set;
+     NOT words remove from it. */
+  const showAll = selected.has('all');
+  const scoped = parsed.some(g => g.sites.length > 0);
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
     const title = scopeOf(card);
-    const excluded = negSites.some(t => title.includes(t));
-    /* Groups whose site terms admit this card (or that name no site). */
-    const mine = parsed.filter(g => !g.sites.length || g.sites.some(t => title.includes(t)));
+    const picked = selected.has(card.id);
+    const named = parsed.some(g => g.sites.some(t => title.includes(t)));
+    const excluded = negSites.some(t => title.includes(t)) || (!showAll && !picked && !named) || (showAll && scoped && !named);
+    /* Groups whose site terms admit this card, or that name no site. A
+       selected card also takes the row terms of every group. */
+    const mine = parsed.filter(g => picked || !g.sites.length || g.sites.some(t => title.includes(t)));
     let any = false;
     card.querySelectorAll('tbody').forEach(tb => {
       let currentBand = null, kept = 0;
@@ -609,7 +611,7 @@ function apply() {
       }
       if (currentBand) currentBand.classList.toggle('hide', q && kept === 0);
     });
-    card.classList.toggle('hide', (!showAll && !selected.has(card.id)) || (q && !any));
+    card.classList.toggle('hide', excluded || (q && !any));
   });
   /* Group headings (Cloud, BIG-IQ) hide when none of their cards are visible. */
   document.querySelectorAll('.group').forEach(g => g.classList.toggle('hide', !g.querySelector('.device:not(.hide)')));
