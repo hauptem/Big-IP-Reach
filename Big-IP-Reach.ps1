@@ -560,14 +560,12 @@ function apply() {
     const excluded = negSites.some(t => title.includes(t));
     /* Groups whose site terms admit this card (or that name no site). */
     const mine = parsed.filter(g => !g.sites.length || g.sites.some(t => title.includes(t)));
-    /* A group with sites but no row terms keeps the whole card. */
-    const titleOnly = q && (!parsed.length || mine.some(g => g.sites.length && !g.terms.length));
     let any = false;
     card.querySelectorAll('tbody').forEach(tb => {
       let currentBand = null, kept = 0;
       for (const tr of tb.rows) {
         if (tr.classList.contains('zone')) {
-          if (currentBand) currentBand.classList.toggle('hide', q && !titleOnly && kept === 0);
+          if (currentBand) currentBand.classList.toggle('hide', q && kept === 0);
           currentBand = tr; kept = 0; continue;
         }
         const key = norm(tr.dataset.k || '');
@@ -577,7 +575,7 @@ function apply() {
         tr.classList.toggle('hide', !hit);
         if (hit) { kept++; any = true; }
       }
-      if (currentBand) currentBand.classList.toggle('hide', q && !titleOnly && kept === 0);
+      if (currentBand) currentBand.classList.toggle('hide', q && kept === 0);
     });
     card.classList.toggle('hide', (!showAll && !selected.has(card.id)) || (q && !any));
   });
