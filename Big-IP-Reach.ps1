@@ -202,13 +202,16 @@ $script:HtmlHead = @'
   USING THE PAGE
   Buttons     One per site, cloud provider, and BIG-IQ. Click to show that
               card alone. Ctrl-click (Cmd-click) adds or removes cards from a
-              multi-selection. All clears the selection.
+              multi-selection. All clears the selection. The selection has
+              priority: the filter narrows within it, and a site or group
+              word naming no selected card is ignored.
   Filter      Matches device names, FQDNs, zones and card titles as you type.
               Words that name a site pick sites (several OR together); the
               group words  sites, cloud, bigiq  (or iq) pick a whole group.
               Other words narrow rows (AND). Comma starts a new row group that keeps
               the same sites unless it names its own. A leading - or ! is NOT
-              and applies to the whole query.
+              and applies to the whole query. Quote a word ("app") to force
+              a row match when the same text occurs in a site name.
                 denver app                  Denver's app devices
                 denver chicago dmz, app     dmz and app devices in either site
                 mumbai, cairo               both sites, whole cards
@@ -216,6 +219,7 @@ $script:HtmlHead = @'
                 sites gtm                   every site's GTM devices
                 -cloud -iq                  sites only
                 denver -dmz                 Denver without its dmz devices
+                appleton "app"              Appleton's app devices
               Alt+F focuses the filter, Alt+C clears it, Escape clears and
               returns to All. / and Ctrl+K also focus the filter.
   Layout      Cards size to the longest name and fill the width. The header
@@ -471,26 +475,31 @@ function render() {
     let px = 11;
     while (a.scrollWidth > a.clientWidth && px > 8) { a.style.fontSize = (--px) + 'px'; }
   }
-  function updateNavRows() {
-    const a = nav.querySelectorAll('a');
-    if (!a.length) return;
-    const top = Math.round(a[0].getBoundingClientRect().top);
-    let single = true;
-    for (const el of a) { if (Math.round(el.getBoundingClientRect().top) !== top) { single = false; break; } }
-    nav.parentElement.classList.toggle('nav-single', single);
-  }
   updateNavRows();
-  window.addEventListener('resize', updateNavRows);
-
-  nav.addEventListener('click', e => {
-    const a = e.target.closest('a'); if (!a) return;
-    e.preventDefault();            /* no anchor jump; the page must not scroll */
-    const id = a.dataset.id;
-    if ((e.ctrlKey || e.metaKey) && id !== 'all') { toggleSelect(id); }
-    else { selectOnly(id); }
-    apply();
-  });
 }
+
+/* The header centres its single row of buttons on the title; with more rows
+   the logo, title and filter pin to the top instead. */
+function updateNavRows() {
+  const nav = document.getElementById('nav');
+  const a = nav.querySelectorAll('a');
+  if (!a.length) return;
+  const top = Math.round(a[0].getBoundingClientRect().top);
+  let single = true;
+  for (const el of a) { if (Math.round(el.getBoundingClientRect().top) !== top) { single = false; break; } }
+  nav.parentElement.classList.toggle('nav-single', single);
+}
+window.addEventListener('resize', updateNavRows);
+
+/* Registered once; render() replaces the buttons but not the nav element. */
+document.getElementById('nav').addEventListener('click', e => {
+  const a = e.target.closest('a'); if (!a) return;
+  e.preventDefault();            /* no anchor jump; the page must not scroll */
+  const id = a.dataset.id;
+  if ((e.ctrlKey || e.metaKey) && id !== 'all') { toggleSelect(id); }
+  else { selectOnly(id); }
+  apply();
+});
 
 /* ============================================================================
    FILTER AND SELECTION
@@ -536,32 +545,46 @@ function apply() {
                      unless it names its own
        -word / !word NOT: applies to the whole query. A site word hides that
                      card; any other word hides matching rows.
+       "word"        forces a row term even when the word occurs in a card
+                     title, so  "app"  finds app rows when a site is named
+                     Appleton. Single quotes work the same way.
      Examples
        denver app                    Denver's app rows
        denver chicago dmz, app       dmz and app rows in either site
        -aws -azure -bigiq            everything except those cards
-       denver -dmz                   Denver without its dmz rows            */
+       denver -dmz                   Denver without its dmz rows
+       appleton "app"                Appleton's app rows                    */
   const negSites = [], negRows = [];
   const groups = [];
   for (const chunk of raw.split(',')) {
     const g = [];
     for (const word of chunk.split(/\s+/)) {
       if (!word) continue;
-      const neg = word[0] === '-' || word[0] === '!';
-      const t = norm(neg ? word.slice(1) : word);
+      let w = word;
+      const neg = w[0] === '-' || w[0] === '!';
+      if (neg) w = w.slice(1);
+      const quoted = /^["']/.test(w);
+      const t = norm(w.replace(/^["']|["']$/g, ''));
       if (!t) continue;
-      if (neg) { (isSite(t) ? negSites : negRows).push(t); } else { g.push(t); }
+      const site = !quoted && isSite(t);
+      if (neg) { (site ? negSites : negRows).push(t); } else { g.push({ t, site }); }
     }
     if (g.length) groups.push(g);
   }
+  /* The button selection has priority. Scope words in the filter narrow
+     within it; a scope word that names no selected card is dropped rather
+     than emptying the page, so  cloud iq  over three selected sites leaves
+     those sites showing. */
+  const showAll = selected.has('all');
+  const chosen = showAll ? null : [...document.querySelectorAll('.device')].filter(c => selected.has(c.id)).map(scopeOf);
+  const inSelection = t => !chosen || chosen.some(title => title.includes(t));
   let carry = [];
   const parsed = groups.map(g => {
-    const sites = g.filter(isSite), terms = g.filter(t => !isSite(t));
+    const sites = g.filter(x => x.site && inSelection(x.t)).map(x => x.t), terms = g.filter(x => !x.site).map(x => x.t);
     if (sites.length) carry = sites;
     return { sites: sites.length ? sites : carry, terms };
   });
   const q = parsed.length > 0 || negSites.length > 0 || negRows.length > 0;
-  const showAll = selected.has('all');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
