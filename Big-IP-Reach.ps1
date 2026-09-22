@@ -204,10 +204,12 @@ $script:HtmlHead = @'
               card alone. Ctrl-click (Cmd-click) adds or removes cards from a
               multi-selection. All clears the selection.
   Filter      Matches device names, FQDNs, zones and card titles as you type.
-              Space is AND:  denver app  shows Denver's app devices.
-              Comma is OR:   mumbai, cairo  shows both sites.
-              A comma group that names no site inherits the previous group's
-              site:  denver app, dmz  shows Denver's app and dmz devices.
+              Words that name a site pick sites (several OR together); other
+              words narrow rows (AND). Comma starts a new row group that keeps
+              the same sites unless it names its own.
+                denver app                  Denver's app devices
+                denver chicago dmz, app     dmz and app devices in either site
+                mumbai, cairo               both sites, whole cards
               Alt+F focuses the filter, Alt+C clears it, Escape clears and
               returns to All. / and Ctrl+K also focus the filter.
   Layout      Cards size to the longest name and fill the width. The header
@@ -518,23 +520,30 @@ function apply() {
      it, so  denver app, dmz  means Denver's app rows and Denver's dmz rows,
      while  mumbai, cairo  stays two independent sites. A term is a site term
      when it appears in any card title. */
+  /* Each group is split into site terms (words found in some card title) and
+     row terms (everything else). Site terms OR with each other, since a
+     device belongs to one site; row terms AND. A group with no site terms
+     inherits the sites of the group before it. So
+       denver chicago dmz, app, vcmp
+     means: in Denver or Chicago, rows matching dmz or app or vcmp. */
   const titles = [...document.querySelectorAll('.device h3')].map(h => norm(h.textContent));
   const isSite = t => titles.some(title => title.includes(t));
   let carry = [];
-  for (const g of groups) {
-    const own = g.filter(isSite);
-    if (own.length) { carry = own; }
-    else if (carry.length) { g.unshift(...carry); }
-  }
-  const q = groups.length > 0;
+  const parsed = groups.map(g => {
+    const sites = g.filter(isSite), terms = g.filter(t => !isSite(t));
+    if (sites.length) carry = sites;
+    return { sites: sites.length ? sites : carry, terms };
+  });
+  const q = parsed.length > 0;
   const showAll = selected.has('all');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
     const title = norm(card.querySelector('h3').textContent);
-    /* A group is title-only when every one of its terms is in the card title;
-       such a group keeps the whole card (e.g. a bare site name). */
-    const titleOnly = q && groups.some(g => g.every(t => title.includes(t)));
+    /* Groups whose site terms admit this card (or that name no site). */
+    const mine = parsed.filter(g => !g.sites.length || g.sites.some(t => title.includes(t)));
+    /* A group with sites but no row terms keeps the whole card. */
+    const titleOnly = q && mine.some(g => g.sites.length && !g.terms.length);
     let any = false;
     card.querySelectorAll('tbody').forEach(tb => {
       let currentBand = null, kept = 0;
@@ -543,9 +552,8 @@ function apply() {
           if (currentBand) currentBand.classList.toggle('hide', q && !titleOnly && kept === 0);
           currentBand = tr; kept = 0; continue;
         }
-        /* Row matches if any group's terms are all found in row key or title. */
         const key = norm(tr.dataset.k || '');
-        const hit = !q || groups.some(g => g.every(t => key.includes(t) || title.includes(t)));
+        const hit = !q || mine.some(g => g.terms.every(t => key.includes(t)));
         tr.classList.toggle('hide', !hit);
         if (hit) { kept++; any = true; }
       }
