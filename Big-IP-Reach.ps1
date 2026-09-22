@@ -1,7 +1,7 @@
 # =============================================================================
 # Big-IP Reach - F5 BIG-IP Management Link tool
 # =============================================================================
-# Version: 1.2
+# Version: 1.0
 # Author: Eric Haupt
 # Released under the MIT License. See LICENSE file for details.
 # https://github.com/hauptem/F5-Big-IP-Reach
@@ -90,7 +90,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:Version    = '1.2'
+$script:Version    = '1.0'
 $script:ScriptDir  = Split-Path -Parent $PSCommandPath
 $script:DefaultIn  = Join-Path $script:ScriptDir 'topology.conf'
 $script:DefaultOut = Join-Path $script:ScriptDir 'BIG-IP_Topology.html'
@@ -137,14 +137,14 @@ $script:HtmlHead = @'
        after the device list on a cloud card.
 
    Add a tenant (vCMP guest)
-       Add a line inside that site's guests:[ ] with name, fqdn, zone and
-       host. Zones are free text; each distinct zone gets its own band, in
-       the order first seen. host is the vCMP host name; not displayed, but
-       the filter matches on it.
+       Add a line inside that site's guests:[ ] with name, fqdn and zone.
+       Zones are free text; each distinct zone gets its own band, in the
+       order first seen. An optional host field records the vCMP host the
+       tenant runs on; it is kept in the data but not displayed or searched.
 
    Add or rename a vCMP host
-       Edit hosts:[ ] on that site. Update the host field on its tenants so
-       filtering by host name still works.
+       Edit hosts:[ ] on that site. Update the host field on its tenants if
+       you keep that field current.
 
    Add a cloud provider
        Copy any  <script> ... </script>  cloud block including both tags,
@@ -166,9 +166,10 @@ $script:HtmlHead = @'
        enabled     true or false. false hides the card and button. Written
                    on every entry so the on/off state is visible at a glance.
        location    Optional. Subtitle shown right-aligned in the title bar.
-       guests[]    Tenants: { name, fqdn, zone, host }. Rendered under one
+       guests[]    Tenants: { name, fqdn, zone[, host] }. Rendered under one
                    band per zone, in the order zones first appear. A guest
-                   with no zone is shown under "Unassigned zone".
+                   with no zone is shown under "Unassigned zone". host is
+                   informational only.
        hosts[]     vCMP hosts: { name, fqdn }. Rendered under "vCMP Hosts".
        gtmEnabled  true or false. Written on every site.
        gtm[]       GTM devices: { name, fqdn }.
@@ -186,10 +187,10 @@ $script:HtmlHead = @'
    unlinked.
 
    ...........................................................................
-   SYNTAX RULES (the usual cause of a blank page)
+   SYNTAX RULES (the usual cause of a missing card)
    ...........................................................................
-   - Every entry is separated from the next by a comma. No comma after the
-     last entry in a list, though one there is tolerated.
+   - Entries in a list are separated by commas. A trailing comma after the
+     last entry is tolerated.
    - Strings sit inside single quotes. A single quote inside a string is
      written \' .
    - Brackets and braces must balance inside each block, and each block
@@ -197,6 +198,20 @@ $script:HtmlHead = @'
      closing </script>.
    - A block that fails to parse is reported in red at the top of the page;
      the browser console (F12) gives the line.
+  ============================================================================
+  USING THE PAGE
+  Buttons     One per site, cloud provider, and BIG-IQ. Click to show that
+              card alone. Ctrl-click (Cmd-click) adds or removes cards from a
+              multi-selection. All clears the selection.
+  Filter      Matches device names, FQDNs, zones and card titles as you type.
+              Space is AND:  denver app  shows Denver's app devices.
+              Comma is OR:   mumbai, cairo  shows both sites.
+              A comma group that names no site inherits the previous group's
+              site:  denver app, dmz  shows Denver's app and dmz devices.
+              Alt+F focuses the filter, Alt+C clears it, Escape clears and
+              returns to All. / and Ctrl+K also focus the filter.
+  Layout      Cards size to the longest name and fill the width. The header
+              grows to as many button rows as needed.
   ============================================================================
   LOGO
   Replace the base64 value in the logo <img> src (in the header below) with
@@ -499,6 +514,18 @@ function apply() {
   const groups = raw.split(',')
     .map(g => g.split(/\s+/).map(norm).filter(Boolean))
     .filter(g => g.length > 0);
+  /* A group that names no site inherits the site terms of the group before
+     it, so  denver app, dmz  means Denver's app rows and Denver's dmz rows,
+     while  mumbai, cairo  stays two independent sites. A term is a site term
+     when it appears in any card title. */
+  const titles = [...document.querySelectorAll('.device h3')].map(h => norm(h.textContent));
+  const isSite = t => titles.some(title => title.includes(t));
+  let carry = [];
+  for (const g of groups) {
+    const own = g.filter(isSite);
+    if (own.length) { carry = own; }
+    else if (carry.length) { g.unshift(...carry); }
+  }
   const q = groups.length > 0;
   const showAll = selected.has('all');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
