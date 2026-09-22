@@ -206,10 +206,13 @@ $script:HtmlHead = @'
   Filter      Matches device names, FQDNs, zones and card titles as you type.
               Words that name a site pick sites (several OR together); other
               words narrow rows (AND). Comma starts a new row group that keeps
-              the same sites unless it names its own.
+              the same sites unless it names its own. A leading - or ! is NOT
+              and applies to the whole query.
                 denver app                  Denver's app devices
                 denver chicago dmz, app     dmz and app devices in either site
                 mumbai, cairo               both sites, whole cards
+                -aws -azure -bigiq          everything except those cards
+                denver -dmz                 Denver without its dmz devices
               Alt+F focuses the filter, Alt+C clears it, Escape clears and
               returns to All. / and Ctrl+K also focus the filter.
   Layout      Cards size to the longest name and fill the width. The header
@@ -513,37 +516,52 @@ function apply() {
      Each term matches the row key or the card title, so a title word (a site
      name) can be one of the AND terms. */
   const raw = document.getElementById('filter').value;
-  const groups = raw.split(',')
-    .map(g => g.split(/\s+/).map(norm).filter(Boolean))
-    .filter(g => g.length > 0);
-  /* A group that names no site inherits the site terms of the group before
-     it, so  denver app, dmz  means Denver's app rows and Denver's dmz rows,
-     while  mumbai, cairo  stays two independent sites. A term is a site term
-     when it appears in any card title. */
-  /* Each group is split into site terms (words found in some card title) and
-     row terms (everything else). Site terms OR with each other, since a
-     device belongs to one site; row terms AND. A group with no site terms
-     inherits the sites of the group before it. So
-       denver chicago dmz, app, vcmp
-     means: in Denver or Chicago, rows matching dmz or app or vcmp. */
   const titles = [...document.querySelectorAll('.device h3')].map(h => norm(h.textContent));
   const isSite = t => titles.some(title => title.includes(t));
+
+  /* Query grammar
+       word          row term: the row key must contain it (AND within a group)
+       site word     a word found in some card title selects that site; several
+                     site words OR together, since a device is in one site
+       ,             starts a new row group; it keeps the previous group's sites
+                     unless it names its own
+       -word / !word NOT: applies to the whole query. A site word hides that
+                     card; any other word hides matching rows.
+     Examples
+       denver app                    Denver's app rows
+       denver chicago dmz, app       dmz and app rows in either site
+       -aws -azure -bigiq            everything except those cards
+       denver -dmz                   Denver without its dmz rows            */
+  const negSites = [], negRows = [];
+  const groups = [];
+  for (const chunk of raw.split(',')) {
+    const g = [];
+    for (const word of chunk.split(/\s+/)) {
+      if (!word) continue;
+      const neg = word[0] === '-' || word[0] === '!';
+      const t = norm(neg ? word.slice(1) : word);
+      if (!t) continue;
+      if (neg) { (isSite(t) ? negSites : negRows).push(t); } else { g.push(t); }
+    }
+    if (g.length) groups.push(g);
+  }
   let carry = [];
   const parsed = groups.map(g => {
     const sites = g.filter(isSite), terms = g.filter(t => !isSite(t));
     if (sites.length) carry = sites;
     return { sites: sites.length ? sites : carry, terms };
   });
-  const q = parsed.length > 0;
+  const q = parsed.length > 0 || negSites.length > 0 || negRows.length > 0;
   const showAll = selected.has('all');
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
     const title = norm(card.querySelector('h3').textContent);
+    const excluded = negSites.some(t => title.includes(t));
     /* Groups whose site terms admit this card (or that name no site). */
     const mine = parsed.filter(g => !g.sites.length || g.sites.some(t => title.includes(t)));
     /* A group with sites but no row terms keeps the whole card. */
-    const titleOnly = q && mine.some(g => g.sites.length && !g.terms.length);
+    const titleOnly = q && (!parsed.length || mine.some(g => g.sites.length && !g.terms.length));
     let any = false;
     card.querySelectorAll('tbody').forEach(tb => {
       let currentBand = null, kept = 0;
@@ -553,7 +571,9 @@ function apply() {
           currentBand = tr; kept = 0; continue;
         }
         const key = norm(tr.dataset.k || '');
-        const hit = !q || mine.some(g => g.terms.every(t => key.includes(t)));
+        const hit = !excluded
+          && !negRows.some(t => key.includes(t))
+          && (!parsed.length || mine.some(g => g.terms.every(t => key.includes(t))));
         tr.classList.toggle('hide', !hit);
         if (hit) { kept++; any = true; }
       }
