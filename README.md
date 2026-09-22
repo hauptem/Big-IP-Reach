@@ -6,7 +6,7 @@ The problem it solves is the one every estate hits eventually: the list of BIG-I
 
 ## How it works
 
-The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. Running it with parameters does the same steps unattended, for a scheduled task or a CI job.
+The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. 
 
 ```
 .\Big-IP-Reach.ps1              # interactive menu
@@ -19,10 +19,9 @@ Files are written next to the script unless a path is given. The typical workflo
 
 ## Requirements
 
-- Windows PowerShell 5.1 or PowerShell 7 or greater. No modules, no internet.
+- Windows PowerShell 5.1 or PowerShell 7 or greater. 
 - A text editor for the config.
 - A browser to open the generated page.
-- Python 3 and Playwright are needed only to run the optional test suite; the tool itself needs neither.
 
 ## The config format
 
@@ -120,24 +119,6 @@ Copy `BIG-IP_Topology.html` wherever your team looks for it. It is one self-cont
 ## The logo
 
 The header image is embedded in the generated HTML as a placeholder. To replace it, open the HTML in a text editor and follow the `LOGO` comment near the top: convert a PNG to base64 and paste it into the `src` of the `<img>` tag. Rebuilding from the config restores the placeholder, so to make a logo permanent, make the same edit once inside `Big-IP-Reach.ps1`.
-
-## Notes
-
-- The generated page makes no network calls and uses no browser storage. It is safe to run from `file:///` on an isolated host.
-- The config is the only file you edit for routine changes. The script's boilerplate and render code do not need touching.
-- Each site, cloud provider, and BIG-IQ is emitted as its own `<script>` block in the HTML. A syntax error introduced by a later hand-edit removes only that one card and is reported in red at the top of the page, rather than breaking the whole file.
-- Card width is sized to the longest device name so every card is consistent and no wider than its content.
-- Exit codes: `0` on success, `1` on validation errors (nothing written), `2` on a file or argument problem.
-
-## Testing
-
-`test_topology.py` is an optional Playwright suite covering rendering, filtering, selection, keyboard shortcuts, enable/disable flags, and responsive layout. It is not required to use the tool.
-
-```
-pip install playwright
-playwright install chromium
-python test_topology.py
-```
 
 ## License
 
