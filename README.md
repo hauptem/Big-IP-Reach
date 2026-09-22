@@ -1,8 +1,8 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script; there is no server, no database, and no runtime. The output is a single HTML file that opens from a file share, an internal web server, a USB stick, an email attachment, or directly off disk with `file:///` on a host with no network at all.
+An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script.
 
-The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. Editing is a text file; publishing is a copy.
+The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. 
 
 ## How it works
 
