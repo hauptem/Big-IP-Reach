@@ -204,14 +204,17 @@ $script:HtmlHead = @'
               card alone. Ctrl-click (Cmd-click) adds or removes cards from a
               multi-selection. All clears the selection.
   Filter      Matches device names, FQDNs, zones and card titles as you type.
-              Words that name a site pick sites (several OR together); other
-              words narrow rows (AND). Comma starts a new row group that keeps
+              Words that name a site pick sites (several OR together); the
+              group words  sites, cloud, bigiq  (or iq) pick a whole group.
+              Other words narrow rows (AND). Comma starts a new row group that keeps
               the same sites unless it names its own. A leading - or ! is NOT
               and applies to the whole query.
                 denver app                  Denver's app devices
                 denver chicago dmz, app     dmz and app devices in either site
                 mumbai, cairo               both sites, whole cards
                 -aws -azure -bigiq          everything except those cards
+                sites gtm                   every site's GTM devices
+                -cloud -iq                  sites only
                 denver -dmz                 Denver without its dmz devices
               Alt+F focuses the filter, Alt+C clears it, Escape clears and
               returns to All. / and Ctrl+K also focus the filter.
@@ -399,8 +402,10 @@ function flatTable(c) {
 }
 
 /* Card wrapper. id must match the nav button's data-id. */
-function panel(id, title, sub, inner) {
-  return `<div class="device" id="${esc(id)}"><h3>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h3>${inner}</div>`;
+/* Card wrapper. data-group lets the filter select a whole group by name
+   (sites, cloud, bigiq). */
+function panel(id, title, sub, inner, group) {
+  return `<div class="device" id="${esc(id)}" data-group="${esc(group)}"><h3>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h3>${inner}</div>`;
 }
 
 /* An entry is live unless it carries enabled:false. */
@@ -444,14 +449,14 @@ function render() {
       + `That card is missing. ${PARSE_ERRORS.map(esc).join('; ')} Open the browser console (F12) for details.</div>`;
   }
   html += '<section class="group"><h2>Sites</h2><div class="grid">';
-  for (const s of sites) html += panel(s.id, s.name, s.location, siteTable(s));
+  for (const s of sites) html += panel(s.id, s.name, s.location, siteTable(s), 'sites');
   html += '</div></section>';
   if (cloud.length) {
     html += '<section class="group"><h2>Cloud</h2><div class="grid">';
-    for (const c of cloud) html += panel(c.id, c.name, 'Virtual Edition', flatTable(c));
+    for (const c of cloud) html += panel(c.id, c.name, 'Virtual Edition', flatTable(c), 'cloud');
     html += '</div></section>';
   }
-  for (const b of bigiq) html += `<section class="group"><h2>${esc(b.name)}</h2><div class="grid">${panel(b.id, b.name, '', flatTable(b))}</div></section>`;
+  for (const b of bigiq) html += `<section class="group"><h2>${esc(b.name)}</h2><div class="grid">${panel(b.id, b.name, '', flatTable(b), 'bigiq')}</div></section>`;
   if (!sites.length && !cloud.length && !bigiq.length) html += '<div class="parse-error">No data blocks loaded.</div>';
   document.getElementById('main').innerHTML = html;
   sizeCards();
@@ -516,7 +521,11 @@ function apply() {
      Each term matches the row key or the card title, so a title word (a site
      name) can be one of the AND terms. */
   const raw = document.getElementById('filter').value;
-  const titles = [...document.querySelectorAll('.device h3')].map(h => norm(h.textContent));
+  /* A card's scope key is its title plus its group name, so  sites, cloud,
+     bigiq (or iq)  select a whole group the same way a site name selects
+     one card. */
+  const scopeOf = card => norm(card.querySelector('h3').textContent) + ' ' + (card.dataset.group || '');
+  const titles = [...document.querySelectorAll('.device')].map(scopeOf);
   const isSite = t => titles.some(title => title.includes(t));
 
   /* Query grammar
@@ -556,7 +565,7 @@ function apply() {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
 
   document.querySelectorAll('.device').forEach(card => {
-    const title = norm(card.querySelector('h3').textContent);
+    const title = scopeOf(card);
     const excluded = negSites.some(t => title.includes(t));
     /* Groups whose site terms admit this card (or that name no site). */
     const mine = parsed.filter(g => !g.sites.length || g.sites.some(t => title.includes(t)));
