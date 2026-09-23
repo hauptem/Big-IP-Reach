@@ -4,6 +4,8 @@ An offline, single-file HTML directory for reaching F5 BIG-IP management interfa
 
 The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. 
 
+<img width="2203" height="1207" alt="Image" src="https://github.com/user-attachments/assets/19c31a7d-aad8-445d-9b53-c7ae501a2472" />
+
 ## How it works
 
 The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. 
