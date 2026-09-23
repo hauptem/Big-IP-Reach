@@ -126,7 +126,6 @@ Copy `BIG-IP_Topology.html` wherever your team looks for it. It is one self-cont
 
 - **Buttons** across the header select a site, cloud provider, or BIG-IQ. Plain click shows one; Ctrl-click (or Cmd-click) adds or removes cards for a multi-selection. `All` clears the selection.
 - **The filter box** narrows the page as you type, matching device names, FQDNs, band labels (zones, vCMP Hosts, GTM), and card titles, so `vcmp` and `gtm` find those rows whatever the hostnames are. Words that name a site pick sites and OR together; the group words `sites`, `cloud`, and `bigiq` (or `iq`) pick a whole group; other words narrow rows and AND. A comma starts a new row group that keeps the same sites unless it names its own: `denver app` shows Denver's app devices, `denver chicago dmz, app` shows dmz and app devices in either site, `mumbai, cairo` shows both sites. A leading `-` (or `!`) is NOT and applies to the whole query: `-aws -azure -bigiq` shows everything except those cards, `denver -dmz` shows Denver without its dmz devices. Quoting a word (`"app"`) forces a row match when a site name contains the same text. Site or group words in the filter add to the button selection, so three selected sites plus `cloud iq` show all five cards. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
-- **The header** grows to as many button rows as needed and never overlaps the logo, title, or filter.
 
 ## Moving an existing page to a newer script
 
