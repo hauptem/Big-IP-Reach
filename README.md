@@ -1,27 +1,29 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script.
+An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script; there is no server, no database, and no runtime. The output is a single HTML file that opens from a file share, an internal web server, a USB stick, an email attachment, or directly off disk with `file:///` on a host with no network at all.
 
-The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. 
+The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. Editing is a text file; publishing is a copy.
 
 ## How it works
 
-The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. 
+The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. Running it with parameters does the same steps unattended, for a scheduled task or a CI job.
 
 ```
 .\Big-IP-Reach.ps1              # interactive menu
 .\Big-IP-Reach.ps1 -Export      # write the starter config
 .\Big-IP-Reach.ps1 -Validate    # check the config, write nothing
 .\Big-IP-Reach.ps1 -Force       # build the HTML, overwriting any existing file
+.\Big-IP-Reach.ps1 -FromHtml    # read an existing page back into topology.conf
 ```
 
 Files are written next to the script unless a path is given. The typical workflow is: export the template once, edit it, then build.
 
 ## Requirements
 
-- Windows PowerShell 5.1 or PowerShell 7 or greater. 
+- Windows PowerShell 5.1 or PowerShell 7 or greater. No modules, no internet.
 - A text editor for the config.
 - A browser to open the generated page.
+- Python 3 and Playwright are needed only to run the optional test suite; the tool itself needs neither.
 
 ## The config format
 
@@ -35,6 +37,7 @@ One record per line, `id|category|value[|extra]`. Blank lines and lines beginnin
 #           name      Display label                 Required, once per block.
 #           enabled   true | false                  Default true.
 #           gtm       true | false                  Show the GTM band. Default false.
+#           vcmp      true | false                  Site only. Show the vCMP Hosts band. Default true.
 #           tenant    zone|device[|vcmp-host]        Site only. Zone is free text.
 #           host      device                        Site only. vCMP host.
 #           gtmdev    device                        Site or cloud. GTM device.
@@ -51,6 +54,16 @@ A minimal site is a name and a pair of hosts:
 site1|name|HQ
 site1|host|hq-bigip01.example.com
 site1|host|hq-bigip02.example.com
+```
+
+A site whose hosts should stay in the file but off the card (an rSeries or
+appliance site, say) sets `vcmp|false`:
+
+```
+site2|name|Denver
+site2|vcmp|false
+site2|host|den-r5900-01.example.com
+site2|tenant|External|den-ext-ltm01a.example.com
 ```
 
 A fuller site with tenants, hosts, and GTM:
@@ -113,12 +126,39 @@ Copy `BIG-IP_Topology.html` wherever your team looks for it. It is one self-cont
 ## The page
 
 - **Buttons** across the header select a site, cloud provider, or BIG-IQ. Plain click shows one; Ctrl-click (or Cmd-click) adds or removes cards for a multi-selection. `All` clears the selection.
-- **The filter box** narrows the page as you type, matching device names, FQDNs, zones, hosts, and card titles. Words that name a site pick sites and OR together; other words narrow rows and AND. A comma starts a new row group that keeps the same sites unless it names its own: `denver app` shows Denver's app devices, `denver chicago dmz, app` shows dmz and app devices in either site, `mumbai, cairo` shows both sites. A leading `-` (or `!`) is NOT and applies to the whole query: `-aws -azure -bigiq` shows everything except those cards, `denver -dmz` shows Denver without its dmz devices. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
+- **The filter box** narrows the page as you type, matching device names, FQDNs, band labels (zones, vCMP Hosts, GTM), and card titles, so `vcmp` and `gtm` find those rows whatever the hostnames are. Words that name a site pick sites and OR together; the group words `sites`, `cloud`, and `bigiq` (or `iq`) pick a whole group; other words narrow rows and AND. A comma starts a new row group that keeps the same sites unless it names its own: `denver app` shows Denver's app devices, `denver chicago dmz, app` shows dmz and app devices in either site, `mumbai, cairo` shows both sites. A leading `-` (or `!`) is NOT and applies to the whole query: `-aws -azure -bigiq` shows everything except those cards, `denver -dmz` shows Denver without its dmz devices. Quoting a word (`"app"`) forces a row match when a site name contains the same text. Site or group words in the filter add to the button selection, so three selected sites plus `cloud iq` show all five cards. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
 - **The header** grows to as many button rows as needed and never overlaps the logo, title, or filter.
+
+## Moving an existing page to a newer script
+
+A page made by an earlier version, or one maintained by hand-editing the HTML, does not need re-keying. `Import HTML` in the menu (or `-FromHtml` in batch) scans the page's data blocks and writes them out as `topology.conf`, then validates the result; the page title carries over. Build from that config with the current script and the page picks up whatever the newer version adds. Both quote styles and fields the older page did not have (`hostsEnabled`, say) are handled; a name containing `|` is noted and replaced with `/`, since the config cannot hold it. The logo is not carried across, so paste it into the new page as before.
+
+```
+.\Big-IP-Reach.ps1 -FromHtml -InputFile old.html -OutputFile topology.conf
+.\Big-IP-Reach.ps1 -Force
+```
 
 ## The logo
 
 The header image is embedded in the generated HTML as a placeholder. To replace it, open the HTML in a text editor and follow the `LOGO` comment near the top: convert a PNG to base64 and paste it into the `src` of the `<img>` tag. Rebuilding from the config restores the placeholder, so to make a logo permanent, make the same edit once inside `Big-IP-Reach.ps1`.
+
+## Notes
+
+- The generated page makes no network calls and uses no browser storage. It is safe to run from `file:///` on an isolated host.
+- The config is the only file you edit for routine changes. The script's boilerplate and render code do not need touching.
+- Each site, cloud provider, and BIG-IQ is emitted as its own `<script>` block in the HTML. A syntax error introduced by a later hand-edit removes only that one card and is reported in red at the top of the page, rather than breaking the whole file.
+- Card width is sized to the longest device name so every card is consistent and no wider than its content.
+- Exit codes: `0` on success, `1` on validation errors (nothing written), `2` on a file or argument problem.
+
+## Testing
+
+`test_topology.py` is an optional Playwright suite covering rendering, filtering, selection, keyboard shortcuts, enable/disable flags, and responsive layout. It is not required to use the tool.
+
+```
+pip install playwright
+playwright install chromium
+python test_topology.py
+```
 
 ## License
 

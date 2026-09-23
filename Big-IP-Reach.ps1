@@ -19,9 +19,12 @@
 #   .\Big-IP-Reach.ps1 -Export         Write the starter topology.conf.
 #   .\Big-IP-Reach.ps1 -Validate       Check the config; write nothing.
 #   .\Big-IP-Reach.ps1 -Force          Build, overwriting the output file.
+#   .\Big-IP-Reach.ps1 -FromHtml       Read a page back into topology.conf.
 #
 #   -InputFile   Config to read (or write with -Export). Default topology.conf.
+#                With -FromHtml, the page to read. Default BIG-IP_Topology.html.
 #   -OutputFile  HTML file to write. Default BIG-IP_Topology.html.
+#                With -FromHtml, the config to write. Default topology.conf.
 #   -Title       Browser tab and header text. Default "BIG-IP Topology".
 #
 #   Exit codes: 0 success, 1 validation errors, 2 file or argument errors.
@@ -39,6 +42,7 @@
 #             name      Display label                 Required, once.
 #             enabled   true | false                  Default true.
 #             gtm       true | false                  Show GTM band. Default false.
+#             vcmp      true | false                  Site only. Show vCMP Hosts band. Default true.
 #             tenant    zone|device[|vcmp-host]       Site only. Zone is free text.
 #             host      device                        Site only. vCMP host.
 #             gtmdev    device                        Site or cloud. GTM device.
@@ -67,13 +71,18 @@ param(
     [Parameter(ParameterSetName = 'Interactive', Mandatory)]
     [switch]$Interactive,
 
+    [Parameter(ParameterSetName = 'FromHtml', Mandatory)]
+    [switch]$FromHtml,
+
     [Parameter(ParameterSetName = 'Build', Position = 0)]
     [Parameter(ParameterSetName = 'Export')]
     [Parameter(ParameterSetName = 'Validate')]
+    [Parameter(ParameterSetName = 'FromHtml')]
     [ValidateNotNullOrEmpty()]
     [string]$InputFile,
 
     [Parameter(ParameterSetName = 'Build', Position = 1)]
+    [Parameter(ParameterSetName = 'FromHtml')]
     [ValidateNotNullOrEmpty()]
     [string]$OutputFile,
 
@@ -84,6 +93,7 @@ param(
 
     [Parameter(ParameterSetName = 'Build')]
     [Parameter(ParameterSetName = 'Export')]
+    [Parameter(ParameterSetName = 'FromHtml')]
     [switch]$Force
 )
 
@@ -136,6 +146,10 @@ $script:HtmlHead = @'
        The GTM band renders after the tenants and hosts on a site card, and
        after the device list on a cloud card.
 
+   Turn the vCMP Hosts band on or off for a site
+       Set  hostsEnabled:true  or  hostsEnabled:false  on that site. hosts[]
+       stays in place either way.
+
    Add a tenant (vCMP guest)
        Add a line inside that site's guests:[ ] with name, fqdn and zone.
        Zones are free text; each distinct zone gets its own band, in the
@@ -171,6 +185,8 @@ $script:HtmlHead = @'
                    with no zone is shown under "Unassigned zone". host is
                    informational only.
        hosts[]     vCMP hosts: { name, fqdn }. Rendered under "vCMP Hosts".
+       hostsEnabled  true or false. false hides the vCMP Hosts band and
+                   keeps hosts[] in place. Written on every site.
        gtmEnabled  true or false. Written on every site.
        gtm[]       GTM devices: { name, fqdn }.
 
@@ -205,7 +221,8 @@ $script:HtmlHead = @'
               multi-selection. All clears the selection. Site or group words
               in the filter add to the selection, so three selected sites
               plus  cloud iq  show all five cards.
-  Filter      Matches device names, FQDNs, zones and card titles as you type.
+  Filter      Matches device names, FQDNs, band labels (zones, vCMP Hosts,
+              GTM) and card titles as you type.
               Words that name a site pick sites (several OR together); the
               group words  sites, cloud, bigiq  (or iq) pick a whole group.
               Other words narrow rows (AND). Comma starts a new row group that keeps
@@ -368,10 +385,12 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 /* Link target for a device: explicit url if given, else https://<fqdn>. */
 const url = d => d.url || ('https://' + d.fqdn);
 
-/* One device row. data-k holds the lowercase text the filter matches on.
-   Entries with neither fqdn nor url render as red plain text. */
-function row(d) {
-  return `<tr data-k="${esc([d.name, d.fqdn, d.zone].filter(Boolean).join(' ').toLowerCase())}">
+/* One device row. data-k holds the lowercase text the filter matches on:
+   the name, the fqdn, and the band the row sits under (its zone, or the
+   vCMP Hosts / GTM label), so  vcmp  and  gtm  find those rows whatever the
+   hostnames are. Entries with neither fqdn nor url render as red plain text. */
+function row(d, label) {
+  return `<tr data-k="${esc([d.name, d.fqdn, d.zone || label].filter(Boolean).join(' ').toLowerCase())}">
     <td>${d.fqdn || d.url
       ? `<a href="${esc(url(d))}" target="_blank" title="${esc(d.fqdn || d.url)}">${esc(d.name)}</a>`
       : `<span class="nolink" title="no fqdn or url in data">${esc(d.name)}</span>`}</td></tr>`;
@@ -388,20 +407,20 @@ function siteTable(s) {
   let body = '';
   for (const z of zones) {
     const rows = guests.filter(g => g.zone === z);
-    if (rows.length) body += band(z) + rows.map(row).join('');
+    if (rows.length) body += band(z) + rows.map(d => row(d)).join('');
   }
   const unassigned = guests.filter(g => !g.zone);
-  if (unassigned.length) body += band('Unassigned zone') + unassigned.map(row).join('');
-  if (s.hosts?.length) body += band('vCMP Hosts') + s.hosts.map(row).join('');
-  if (s.gtmEnabled === true && s.gtm?.length) body += band('GTM') + s.gtm.map(row).join('');
+  if (unassigned.length) body += band('Unassigned zone') + unassigned.map(d => row(d, 'Unassigned zone')).join('');
+  if (s.hostsEnabled !== false && s.hosts?.length) body += band('vCMP Hosts') + s.hosts.map(d => row(d, 'vCMP Hosts')).join('');
+  if (s.gtmEnabled === true && s.gtm?.length) body += band('GTM') + s.gtm.map(d => row(d, 'GTM')).join('');
   return `<table><tbody>${body}</tbody></table>`;
 }
 
 /* Cloud and BIG-IQ card body: plain device list, then an optional GTM band
    (cloud only) when gtmEnabled is true and gtm[] has entries. */
 function flatTable(c) {
-  let body = (c.devices || []).map(row).join('');
-  if (c.gtmEnabled === true && c.gtm?.length) body += band('GTM') + c.gtm.map(row).join('');
+  let body = (c.devices || []).map(d => row(d)).join('');
+  if (c.gtmEnabled === true && c.gtm?.length) body += band('GTM') + c.gtm.map(d => row(d, 'GTM')).join('');
   return `<table><tbody>${body}</tbody></table>`;
 }
 
@@ -652,10 +671,12 @@ $script:ConfTemplate = @'
 #           type      site | cloud | bigiq. Default site.
 #           enabled   true | false. false hides the block, keeps the data.
 #           gtm       true | false. Shows the GTM band.
+#           vcmp      true | false. Shows the vCMP Hosts band. Default true.
+#                     (site only) false hides the band; host lines stay.
 #           tenant    Tenant (vCMP guest):  id|tenant|ZONE|fqdn[|vcmp-host]
 #                     ZONE is free text; each zone gets a band on the card,
 #                     in the order first seen. The optional vCMP host name is
-#                     not shown but the page filter matches on it.
+#                     recorded in the page data but not shown.
 #           host      vCMP host                 (site only)
 #           gtmdev    GTM device                (site, cloud)
 #           device    Device                    (cloud, bigiq)
@@ -928,11 +949,11 @@ function Write-TextFile {
 #region Template parsing and validation ----------------------------------------
 
 $script:Categories = @{
-    site  = @('type', 'name', 'enabled', 'gtm', 'tenant', 'host', 'gtmdev')
+    site  = @('type', 'name', 'enabled', 'gtm', 'vcmp', 'tenant', 'host', 'gtmdev')
     cloud = @('type', 'name', 'enabled', 'gtm', 'gtmdev', 'device')
     bigiq = @('type', 'name', 'enabled', 'device')
 }
-$script:AllCategories = @('type', 'name', 'enabled', 'gtm', 'tenant', 'host', 'gtmdev', 'device')
+$script:AllCategories = @('type', 'name', 'enabled', 'gtm', 'vcmp', 'tenant', 'host', 'gtmdev', 'device')
 $script:ReservedIds   = @('all')
 
 $script:Rx = @{
@@ -957,7 +978,7 @@ function ConvertTo-Block {
     param([string]$Id, [int]$Line)
     return [ordered]@{
         id = $Id; type = $null; typeLine = 0; name = $null; nameLine = 0
-        enabled = $true; gtm = $false; gtmLine = 0; firstLine = $Line
+        enabled = $true; gtm = $false; gtmLine = 0; vcmp = $true; vcmpLine = 0; firstLine = $Line
         guests  = [System.Collections.Generic.List[hashtable]]::new()
         hosts   = [System.Collections.Generic.List[hashtable]]::new()
         gtmdev  = [System.Collections.Generic.List[hashtable]]::new()
@@ -1064,6 +1085,10 @@ function Read-Template {
                 if ($val -notmatch $script:Rx.Bool) { $errors.Add([Note]::new($lineNo, "gtm must be true or false, not '$val'")); break }
                 $b.gtm = ($val -eq 'true'); $b.gtmLine = $lineNo
             }
+            'vcmp' {
+                if ($val -notmatch $script:Rx.Bool) { $errors.Add([Note]::new($lineNo, "vcmp must be true or false, not '$val'")); break }
+                $b.vcmp = ($val -eq 'true'); $b.vcmpLine = $lineNo
+            }
             'tenant' {
                 if (-not $val) { $errors.Add([Note]::new($lineNo, "tenant needs a zone: id|tenant|zone|device[|vcmp-host]")); break }
                 if (-not $x1)  { $errors.Add([Note]::new($lineNo, "tenant in zone '$val' needs a device: id|tenant|zone|device[|vcmp-host]")); break }
@@ -1101,6 +1126,7 @@ function Read-Template {
         if ('device' -notin $allowed) { foreach ($d in $b.devices){ $errors.Add([Note]::new($d.line, "device lines are not valid on a site block; use tenant, host or gtmdev")) } }
         if ('gtmdev' -notin $allowed) { foreach ($d in $b.gtmdev) { $errors.Add([Note]::new($d.line, "gtmdev lines are not valid on a $($b.type) block")) } }
         if ('gtm'    -notin $allowed -and $b.gtmLine) { $errors.Add([Note]::new($b.gtmLine, "gtm is not valid on a $($b.type) block")) }
+        if ('vcmp'   -notin $allowed -and $b.vcmpLine) { $errors.Add([Note]::new($b.vcmpLine, "vcmp is not valid on a $($b.type) block")) }
         if ('gtm'    -in    $allowed -and $b.gtm -and -not $b.gtmdev.Count) { $errors.Add([Note]::new($b.gtmLine, "$ref has gtm=true but no gtmdev line")) }
 
         $seenName = @{}
@@ -1128,6 +1154,128 @@ function Read-Template {
     if (-not $blocks.Count) { $errors.Add([Note]::new(0, 'no data lines found')) }
 
     return @{ blocks = $blocks; errors = $errors; warnings = $warnings }
+}
+
+#endregion
+
+#region HTML page reader ------------------------------------------------------
+
+# A generated page, hand-edited or not, can be read back into template form.
+# The data blocks are regular enough for a pattern scan: one SITES.push,
+# CLOUD.push or BIGIQ = literal per <script>, scalar fields, and lists of
+# { name, fqdn|url, zone, host } entries. Either quote style is accepted.
+
+$script:JsStr = '(?:''(?<s>(?:\\.|[^''\\])*)''|"(?<d>(?:\\.|[^"\\])*)")'
+
+function ConvertFrom-JsString {
+    param([string]$Text)
+    return [regex]::Replace($Text, '\\(.)', '$1')
+}
+
+function Get-JsField {
+    # Scalar field  key:'value'  or  key:true|false  inside a literal. Returns
+    # $null when absent. Word boundaries keep gtm: from matching gtmEnabled:.
+    param([string]$Body, [string]$Key)
+    $m = [regex]::Match($Body, "(?<![\w$])$Key\s*:\s*(?:$($script:JsStr)|(?<b>true|false))")
+    if (-not $m.Success) { return $null }
+    if ($m.Groups['b'].Success) { return ($m.Groups['b'].Value -eq 'true') }
+    if ($m.Groups['s'].Success) { return (ConvertFrom-JsString $m.Groups['s'].Value) }
+    return (ConvertFrom-JsString $m.Groups['d'].Value)
+}
+
+function Get-JsList {
+    # Entries of  key:[ { ... }, { ... } ]  as hashtables of their string fields.
+    param([string]$Body, [string]$Key)
+    $out = [System.Collections.Generic.List[hashtable]]::new()
+    $m = [regex]::Match($Body, "(?<![\w$])$Key\s*:\s*\[(?<list>(?:[^\[\]]|\[[^\[\]]*\])*)\]")
+    if (-not $m.Success) { return $out }
+    foreach ($e in [regex]::Matches($m.Groups['list'].Value, '\{[^{}]*\}')) {
+        $h = @{}
+        foreach ($k in 'name', 'fqdn', 'url', 'zone', 'host') {
+            $v = Get-JsField -Body $e.Value -Key $k
+            if ($null -ne $v) { $h[$k] = [string]$v }
+        }
+        if ($h.Count) { $out.Add($h) }
+    }
+    return $out
+}
+
+function ConvertTo-ConfValue {
+    # Template form of a device: the target, prefixed by  Name=  only when the
+    # shown name is not what the target would produce on its own.
+    param([hashtable]$d)
+    $url    = if ($d.ContainsKey('url'))  { $d.url }  else { '' }
+    $fqdn   = if ($d.ContainsKey('fqdn')) { $d.fqdn } else { '' }
+    $name   = if ($d.ContainsKey('name')) { $d.name } else { '' }
+    $target = if ($url) { $url } else { $fqdn }
+    $auto   = if ($url) { try { ([uri]$url).Host } catch { '' } }
+              elseif ($target -match '^[\d.]+$') { $target }
+              else { ($target -split '\.')[0] }
+    if ($name -and $name -ne $auto) { return "$name=$target" }
+    return $target
+}
+
+# Read a page. Returns @{ text; title; count; notes } where text is template
+# content ready to validate with Read-Template and notes lists anything that
+# could not be carried across.
+function Read-HtmlPage {
+    param([string]$Path)
+
+    $html  = [System.IO.File]::ReadAllText($Path)
+    $notes = [System.Collections.Generic.List[string]]::new()
+    $sb    = [System.Text.StringBuilder]::new()
+    $count = 0
+
+    $title = [regex]::Match($html, '<title>(?<t>[^<]*)</title>').Groups['t'].Value
+    $title = [System.Net.WebUtility]::HtmlDecode($title).Trim()
+
+    $bar = { param($v) if ($v -match '\|') { $notes.Add("'$v' contains | which the template cannot hold; edit it afterwards"); $v -replace '\|', '/' } else { $v } }
+
+    [void]$sb.AppendLine("# Recovered from $(Split-Path -Leaf $Path) $(Get-Date -Format 'yyyy-MM-dd HH:mm')")
+    [void]$sb.AppendLine('# Format: id|category|value. See Export Template for the full description.')
+
+    foreach ($sc in [regex]::Matches($html, '<script>(?<js>.*?)</script>', 'Singleline')) {
+        $js = $sc.Groups['js'].Value
+        $m  = [regex]::Match($js, '(?<reg>SITES|CLOUD)\.push\(\s*\{(?<body>.*)\}\s*\)\s*;|(?<reg>BIGIQ)\s*=\s*\{(?<body>.*)\}\s*;', 'Singleline')
+        if (-not $m.Success) { continue }
+        $body = $m.Groups['body'].Value
+        $type = switch ($m.Groups['reg'].Value) { 'SITES' { 'site' } 'CLOUD' { 'cloud' } default { 'bigiq' } }
+        $id   = Get-JsField -Body $body -Key 'id'
+        $name = Get-JsField -Body $body -Key 'name'
+        if (-not $id) { $notes.Add("a $type block with no id was skipped"); continue }
+        $count++
+
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine("# ---- $name")
+        if ($type -ne 'site') { [void]$sb.AppendLine("$id|type|$type") }
+        [void]$sb.AppendLine("$id|name|$(& $bar $name)")
+        $enabled = Get-JsField -Body $body -Key 'enabled'
+        [void]$sb.AppendLine("$id|enabled|$(if ($enabled -eq $false) { 'false' } else { 'true' })")
+        if ($type -ne 'bigiq') {
+            $gtm = Get-JsField -Body $body -Key 'gtmEnabled'
+            [void]$sb.AppendLine("$id|gtm|$(if ($gtm -eq $true) { 'true' } else { 'false' })")
+        }
+        if ($type -eq 'site') {
+            $hostsOn = Get-JsField -Body $body -Key 'hostsEnabled'
+            if ($hostsOn -eq $false) { [void]$sb.AppendLine("$id|vcmp|false") }
+            foreach ($d in (Get-JsList -Body $body -Key 'hosts'))  { [void]$sb.AppendLine("$id|host|$(ConvertTo-ConfValue $d)") }
+            foreach ($d in (Get-JsList -Body $body -Key 'guests')) {
+                $zone = if ($d.ContainsKey('zone') -and $d.zone) { & $bar $d.zone }
+                        else { $notes.Add("tenant '$($d['name'])' in $id has no zone; placed in 'Unassigned'"); 'Unassigned' }
+                $line = "$id|tenant|$zone|$(ConvertTo-ConfValue $d)"
+                if ($d.ContainsKey('host') -and $d.host) { $line += "|$($d.host)" }
+                [void]$sb.AppendLine($line)
+            }
+        }
+        else {
+            foreach ($d in (Get-JsList -Body $body -Key 'devices')) { [void]$sb.AppendLine("$id|device|$(ConvertTo-ConfValue $d)") }
+        }
+        if ($type -ne 'bigiq') {
+            foreach ($d in (Get-JsList -Body $body -Key 'gtm')) { [void]$sb.AppendLine("$id|gtmdev|$(ConvertTo-ConfValue $d)") }
+        }
+    }
+
+    return @{ text = $sb.ToString(); title = $title; count = $count; notes = $notes }
 }
 
 #endregion
@@ -1166,7 +1314,7 @@ function ConvertTo-HtmlDocument {
         [void]$sb.AppendLine("SITES.push({ id:$(ConvertTo-JsString $b.id), name:$(ConvertTo-JsString $b.name), enabled:$(ConvertTo-JsBool $b.enabled),")
         [void]$sb.AppendLine('  guests:[')
         [void]$sb.AppendLine((ConvertTo-JsList $b.guests '    ') + ' ],')
-        [void]$sb.AppendLine('  hosts:[')
+        [void]$sb.AppendLine("  hostsEnabled:$(ConvertTo-JsBool $b.vcmp), hosts:[")
         [void]$sb.AppendLine((ConvertTo-JsList $b.hosts '    ') + ' ],')
         [void]$sb.AppendLine("  gtmEnabled:$(ConvertTo-JsBool $b.gtm), gtm:[")
         [void]$sb.AppendLine((ConvertTo-JsList $b.gtmdev '    ') + ' ] });')
@@ -1205,6 +1353,27 @@ function Invoke-Export {
     try { Write-TextFile $Path $script:ConfTemplate } catch { Write-Fail $_.Exception.Message; return 2 }
     Write-Line "Wrote $Path"
     return 0
+}
+
+function Invoke-Recover {
+    # Read a page back into a template, validate the result, write it.
+    param([string]$InputFile, [string]$OutputFile, [bool]$Overwrite)
+
+    if (-not (Test-Path -LiteralPath $InputFile)) { Write-Fail "Not found: $InputFile"; return 2 }
+    $InputFile = (Resolve-Path -LiteralPath $InputFile).Path
+    if ((Test-Path -LiteralPath $OutputFile) -and -not $Overwrite) {
+        Write-Fail "File exists: $OutputFile  (use -Force to overwrite)"; return 2
+    }
+
+    $page = Read-HtmlPage $InputFile
+    if (-not $page.count) { Write-Fail "No data blocks found in $InputFile"; return 1 }
+    foreach ($n in $page.notes) { Write-Note "note $n" }
+
+    try { Write-TextFile $OutputFile $page.text } catch { Write-Fail $_.Exception.Message; return 2 }
+    Write-Line ("Wrote {0} ({1} block(s))" -f $OutputFile, $page.count)
+
+    # The recovered file must pass the same checks as a hand-written one.
+    return (Invoke-Build -InputFile $OutputFile -OutputFile '' -Title '' -Overwrite $true -ValidateOnly $true)
 }
 
 function Invoke-Build {
@@ -1256,32 +1425,39 @@ function Show-Help {
     2)  Import Template     Checks topology.conf. Problems are listed with
                             their line numbers. Fix and import again.
 
-    3)  Export HTML         Writes BIG-IP_Topology.html next to this script.
+    3)  Import HTML         Reads a page made by this tool, including one
+                            edited by hand, and writes its data back to
+                            topology.conf. Use it to move an existing page
+                            onto a newer version of the tool.
+
+    4)  Export HTML         Writes BIG-IP_Topology.html next to this script.
                             To change the header logo, open the HTML in a
                             text editor and follow the LOGO comment.
 
-    4)  Set HTML Title      Text for the browser tab and header bar.
+    5)  Set HTML Title      Text for the browser tab and header bar.
 
 '@ -split "`r?`n" | ForEach-Object { Write-Host $_ -ForegroundColor White }
 }
 
 function Resolve-InputPath {
-    # Menu helper: list the .conf files beside the script and let the operator
-    # pick one by number, or type a filename or full path (with or without a
-    # path, quoted or not). Returns a resolved path, or $null to cancel.
-    # topology.conf sorts first if present; the rest follow alphabetically.
-    $found = @(Get-ChildItem -LiteralPath $script:ScriptDir -Filter *.conf -File -ErrorAction SilentlyContinue |
-        Sort-Object @{ Expression = { $_.Name -ne 'topology.conf' } }, Name)
+    # Menu helper: list files of one kind beside the script and let the
+    # operator pick one by number, or type a filename or full path (with or
+    # without a path, quoted or not). Returns a resolved path, or $null to
+    # cancel. The default file sorts first if present; the rest follow
+    # alphabetically.
+    param([string]$Filter = '*.conf', [string]$First = 'topology.conf', [string]$Label = 'Templates')
+    $files = @(Get-ChildItem -LiteralPath $script:ScriptDir -Filter $Filter -File -ErrorAction SilentlyContinue)
+    $found = @($files | Where-Object Name -eq $First) + @($files | Where-Object Name -ne $First | Sort-Object Name)
 
     if ($found.Count) {
-        Write-Line 'Templates in this folder:'
+        Write-Line "$Label in this folder:"
         for ($i = 0; $i -lt $found.Count; $i++) {
             Write-Host ('    {0,2}) {1}' -f ($i + 1), $found[$i].Name) -ForegroundColor White
         }
         Write-Host ''
     }
     else {
-        Write-Line "No .conf files in $($script:ScriptDir)."
+        Write-Line "No $Filter files in $($script:ScriptDir)."
     }
 
     $answer = Read-Answer 'Number, filename or path (blank to cancel): '
@@ -1322,9 +1498,10 @@ function Invoke-Menu {
         Write-Host ''
         Write-Line '1)  Export Template'
         Write-Line '2)  Import Template'
-        Write-Line '3)  Export HTML'
-        Write-Line "4)  Set HTML Title   (Current: $Title)"
-        Write-Line '5)  Help'
+        Write-Line '3)  Import HTML'
+        Write-Line '4)  Export HTML'
+        Write-Line "5)  Set HTML Title   (Current: $Title)"
+        Write-Line '6)  Help'
         Write-Line 'Q)  Quit'
         Write-Host ''
         $choice = (Read-Answer 'Select: ').ToUpper()
@@ -1343,18 +1520,33 @@ function Invoke-Menu {
                 }
             }
             '3' {
-                if (-not $checked) { Write-Line 'Import the template first (option 2).'; $pause = $true }
+                # A page is read back into topology.conf, which then becomes
+                # the imported template. The page title carries over.
+                $page = Resolve-InputPath -Filter '*.html' -First 'BIG-IP_Topology.html' -Label 'Pages'
+                if ($page -and (Confirm-Overwrite $script:DefaultIn)) {
+                    $rc = Invoke-Recover -InputFile $page -OutputFile $script:DefaultIn -Overwrite $true
+                    $checked = ($rc -eq 0)
+                    if ($checked) {
+                        $conf = $script:DefaultIn
+                        $t = (Read-HtmlPage $page).title
+                        if ($t) { $Title = $t }
+                    }
+                    $pause = $true
+                }
+            }
+            '4' {
+                if (-not $checked) { Write-Line 'Import a template (option 2) or a page (option 3) first.'; $pause = $true }
                 elseif (Confirm-Overwrite $script:DefaultOut) {
                     if ((Invoke-Build -InputFile $conf -OutputFile $script:DefaultOut -Title $Title -Overwrite $true -ValidateOnly $false) -ne 0) { $pause = $true }
                 }
             }
-            '4' {
+            '5' {
                 $v = Read-Answer 'New title: '
                 if ($v) { $Title = $v } else { Write-Line 'Title unchanged.' }
             }
-            '5' { Show-Help; $pause = $true }
+            '6' { Show-Help; $pause = $true }
             'Q' { return 0 }
-            default { Write-Line 'Choose 1-5 or Q.'; $pause = $true }
+            default { Write-Line 'Choose 1-6 or Q.'; $pause = $true }
         }
         if ($pause) {
             Write-Host ''
@@ -1379,6 +1571,12 @@ if (-not $OutputFile) { $OutputFile = $script:DefaultOut }
 
 switch ($PSCmdlet.ParameterSetName) {
     'Export'   { exit (Invoke-Export -Path $InputFile -Overwrite ([bool]$Force)) }
+    'FromHtml' {
+        # Defaults run the other way for this set: read the page, write the template.
+        if (-not $PSBoundParameters.ContainsKey('InputFile'))  { $InputFile  = $script:DefaultOut }
+        if (-not $PSBoundParameters.ContainsKey('OutputFile')) { $OutputFile = $script:DefaultIn }
+        exit (Invoke-Recover -InputFile $InputFile -OutputFile $OutputFile -Overwrite ([bool]$Force))
+    }
     'Validate' { exit (Invoke-Build -InputFile $InputFile -OutputFile '' -Title $Title -Overwrite $true -ValidateOnly $true) }
     default    { exit (Invoke-Build -InputFile $InputFile -OutputFile $OutputFile -Title $Title -Overwrite ([bool]$Force) -ValidateOnly $false) }
 }
