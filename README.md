@@ -37,7 +37,7 @@ One record per line, `id|category|value[|extra]`. Blank lines and lines beginnin
 #           enabled   true | false                  Default true.
 #           gtm       true | false                  Show the GTM band. Default false.
 #           vcmp      true | false                  Site only. Show the vCMP Hosts band. Default true.
-#           tenant    zone|device[|vcmp-host]        Site only. Zone is free text.
+#           tenant    zone|device[|vcmp-host]       Site only. Zone is free text.
 #           host      device                        Site only. vCMP host.
 #           gtmdev    device                        Site or cloud. GTM device.
 #           device    device                        Cloud or bigiq.
