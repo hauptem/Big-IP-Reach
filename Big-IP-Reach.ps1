@@ -1,7 +1,7 @@
 # =============================================================================
 # Big-IP Reach - F5 BIG-IP Management Link tool
 # =============================================================================
-# Version: 1.0
+# Version: 1.3
 # Author: Eric Haupt
 # Released under the MIT License. See LICENSE file for details.
 # https://github.com/hauptem/F5-Big-IP-Reach
