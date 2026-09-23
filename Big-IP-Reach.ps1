@@ -10,9 +10,7 @@
 #
 # Reads topology.conf, validates it, and writes BIG-IP_Topology.html: a
 # self-contained, offline page that lists every BIG-IP device as a link,
-# grouped by site, cloud provider, and BIG-IQ. The HTML boilerplate and a
-# starter config are embedded in this script. Files are written next to the
-# script unless a path is given.
+# grouped by site, cloud provider, and BIG-IQ.
 #
 # USAGE
 #   .\Big-IP-Reach.ps1                 Interactive menu (also -Interactive).
@@ -27,11 +25,10 @@
 #                With -FromHtml, the config to write. Default topology.conf.
 #   -Title       Browser tab and header text. Default "BIG-IP Topology".
 #
-#   Exit codes: 0 success, 1 validation errors, 2 file or argument errors.
 #
 # TEMPLATE FORMAT
 # One record per line:   id|category|value[|extra[|extra]]
-# Blank lines and lines beginning with # are ignored. Fields are trimmed.
+# Blank lines and lines beginning with # are ignored. 
 #
 #   id        Block tag: lowercase letters, digits, hyphens; starts with a
 #             letter. The first line naming an id creates the block. Blocks
@@ -52,9 +49,6 @@
 #             https://<device>. The shown name is the FQDN's first label or
 #             the IP. Override with   Shown Name=device
 #
-# VALIDATION
-# Errors stop the build and nothing is written. Warnings are printed and the
-# build continues. Every message carries the template line number.
 #
 # =============================================================================
 #Requires -Version 5.1
