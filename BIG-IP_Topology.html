@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  BIG-IP Topology
+
+  Single-file offline page. 
+
+   ...........................................................................
+   HOW TO
+   ...........................................................................
+   Enable or disable a site, cloud provider, or BIG-IQ
+       Every entry carries  enabled:true  or  enabled:false  on its first
+       line. Change the word. false removes the card and its button; the data
+       stays in place so it can be switched back on later.
+
+   Add a site
+       Copy an entire  <script> ... </script>  site block, including both
+       tags, paste it after the last site block, and change id, name and
+       every hostname. Set enabled and gtmEnabled as needed. id must be
+       unique, lowercase, with no spaces. Order on the page follows order
+       in the file.
+
+   Turn GTM on or off for a site or cloud provider
+       Set  gtmEnabled:true  or  gtmEnabled:false  on that entry. Keep the
+       gtm:[ ... ] list in place either way so the hostname is not lost.
+       To add a second GTM device, add another { name, fqdn } inside gtm:[ ].
+       The GTM band renders after the tenants and hosts on a site card, and
+       after the device list on a cloud card.
+
+   Turn the vCMP Hosts band on or off for a site
+       Set  hostsEnabled:true  or  hostsEnabled:false  on that site. hosts[]
+       stays in place either way.
+
+   Add a tenant (vCMP guest)
+       Add a line inside that site's guests:[ ] with name, fqdn and zone.
+       Zones are free text; each distinct zone gets its own band, in the
+       order first seen. An optional host field records the vCMP host the
+       tenant runs on; it is kept in the data but not displayed or searched.
+
+   Add or rename a vCMP host
+       Edit hosts:[ ] on that site. Update the host field on its tenants if
+       you keep that field current.
+
+   Add a cloud provider
+       Copy any  <script> ... </script>  cloud block including both tags,
+       paste it after the last cloud block, change id, name and hostnames,
+       and set enabled:true. To add a device to an existing provider, add a
+       { name, fqdn } line inside its devices:[ ].
+
+   Point one device at a non-standard URL
+       Add  url:'https://host.example.com:8443/'  to that entry. It overrides
+       the default https://<fqdn>.
+
+   ...........................................................................
+   FIELD REFERENCE
+   ...........................................................................
+   site block  SITES.push({ ... });  One card and one button each.
+       id          Required. Unique, lowercase, no spaces.
+       name        Required. Button label and card title. Buttons are 168px
+                   wide; keep it short ("Site 1", "DAL", "LHR2").
+       enabled     true or false. false hides the card and button. Written
+                   on every entry so the on/off state is visible at a glance.
+       location    Optional. Subtitle shown right-aligned in the title bar.
+       guests[]    Tenants: { name, fqdn, zone[, host] }. Rendered under one
+                   band per zone, in the order zones first appear. A guest
+                   with no zone is shown under "Unassigned zone". host is
+                   informational only.
+       hosts[]     vCMP hosts: { name, fqdn }. Rendered under "vCMP Hosts".
+       hostsEnabled  true or false. false hides the vCMP Hosts band and
+                   keeps hosts[] in place. Written on every site.
+       gtmEnabled  true or false. Written on every site.
+       gtm[]       GTM devices: { name, fqdn }.
+
+   cloud block CLOUD.push({ ... });  One card and one button under Cloud.
+       id, name, enabled as above.  devices[]  { name, fqdn }.
+       gtmEnabled  true or false. Written on every provider.
+       gtm[]       GTM devices: { name, fqdn }.
+
+   bigiq block BIGIQ = { ... };  One card and one button under BIG-IQ.
+       id, name, enabled as above.  devices[]  { name, fqdn }.
+
+   Every device needs name and fqdn. Link target is https://<fqdn> unless
+   url is given. A device with neither fqdn nor url is drawn red and
+   unlinked. A device may also carry  nets:['10.1.10.0/24', ...]  listing
+   the IPv4 subnets it serves.
+
+   ...........................................................................
+   SYNTAX RULES (the usual cause of a missing card)
+   ...........................................................................
+   - Entries in a list are separated by commas. A trailing comma after the
+     last entry is tolerated.
+   - Strings sit inside single quotes. A single quote inside a string is
+     written \' .
+   - Brackets and braces must balance inside each block, and each block
+     must end with  });  (sites and cloud) or  };  (BIG-IQ) before its
+     closing </script>.
+   - A block that fails to parse is reported in red at the top of the page;
+     the browser console (F12) gives the line.
+  ============================================================================
+  USING THE PAGE
+  Buttons     One per site, cloud provider, and BIG-IQ. Click to show that
+              card alone. Ctrl-click (Cmd-click) adds or removes cards from a
+              multi-selection. All clears the selection. Site or group words
+              in the filter add to the selection, so three selected sites
+              plus  'cloud iq'  show all five cards.
+  Filter      Matches device names, FQDNs, band labels (zones, vCMP Hosts,
+              GTM) and card titles as you type.
+              Words that name a site pick sites (several OR together); the
+              group words  sites, cloud, bigiq  (or iq) pick a whole group.
+              Other words narrow rows (AND). Comma starts a new row group that keeps
+              the same sites unless it names its own. A leading - or ! is NOT
+              and applies to the whole query. Quote a word ("app") to force
+              a row match when the same text occurs in a site name.
+              An IPv4 address finds the devices whose subnets contain it
+              (and any device listed by that address); a cidr finds
+              subnets that overlap it. A partly typed address narrows as
+              you go: 10.2 shows every subnet beginning 10.2.
+                denver app                  Denver's app devices
+                10.1.10.25                  devices serving that address
+                denver chicago dmz, app     dmz and app devices in either site
+                mumbai, cairo               both sites, whole cards
+                -aws -azure -bigiq          everything except those cards
+                sites gtm                   every site's GTM devices
+                -cloud -iq                  sites only
+                denver -dmz                 Denver without its dmz devices
+                appleton "app"              Appleton's app devices
+              Alt+F focuses the filter, Alt+C clears it, Escape clears and
+              returns to All. / and Ctrl+K also focus the filter.
+  Layout      Cards size to the longest name and fill the width. The header
+              grows to as many button rows as needed.
+  ============================================================================
+  LOGO
+  Replace the base64 value in the logo <img> src (in the header below) with
+  your own PNG, as   data:image/png;base64,<data>   . It is scaled to 50px
+  high. A rebuild restores the default, so make the change in Big-IP-Reach.ps1
+  as well to keep it.
+
+  STYLES
+  The colour palette is at the top of <style>. Layout rules below it do not
+  need editing.
+  ============================================================================
+-->
+
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIG-IP Topology</title>
+<style>
+/* ---------------------------------------------------------------------------
+   PALETTE (editable). Values follow the F5 TMUI configuration utility.
+   To change a colour, change it here. Everything below this block is
+   layout and should not need editing.
+   --------------------------------------------------------------------------- */
+:root{
+  --bg:#cfcecb;                                          /* page canvas */
+  --ink:#333; --muted:#666; --line:#8f8f8f;              /* text and rules */
+  --header:linear-gradient(to bottom,#777 0%,#3b3b3b 100%);     /* top bar */
+  --section:linear-gradient(to bottom,#728192 0%,#525e69 100%); /* card title bars */
+  --section-ink:#ffe375;                                 /* yellow card title text */
+  --input:#fff; --input-line:#ccc; --focus:#6ca612;      /* filter box */
+  --bad:#A3001F;                                         /* red: data error marker */
+  --shadow:0 2px 6px rgba(0,0,0,.28);
+  --mono:'Courier New',monospace; --sans:Roboto,'Helvetica Neue',Arial,sans-serif;
+}
+
+/* ===========================================================================
+   LAYOUT RULES. No edits needed for data or colour changes.
+   =========================================================================== */
+/* Page frame */
+*{box-sizing:border-box}
+/* Always reserve the vertical scrollbar so content never shifts when it appears. */
+html{overflow-y:scroll;scrollbar-gutter:stable}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 var(--sans)}
+main{padding:20px 24px 40px;margin:0 auto}
+/* Generic hide class used by the filter and button logic. */
+.hide{display:none}
+
+/* ---------------------------------------------------------------------------
+   Header bar. Sticky. Logo, title and button grid never shrink; only the
+   filter box gives up width. Below ~980px the bar scrolls sideways inside
+   itself rather than widening the page.
+   --------------------------------------------------------------------------- */
+header{background:var(--header);color:#fff;padding:8px 24px;display:flex;align-items:flex-start;gap:16px;box-shadow:var(--shadow);position:sticky;top:0;z-index:5}
+header.nav-single{align-items:center}
+header.nav-single img,header.nav-single h1,header.nav-single nav,header.nav-single #filter{align-self:center}
+header img{height:50px;width:auto;max-width:120px;object-fit:contain;object-position:left center;display:block;flex:none;align-self:flex-start}
+header h1{margin:0;font-size:20px;font-weight:normal;letter-spacing:.5px;white-space:nowrap;flex:none;align-self:flex-start;height:50px;display:flex;align-items:center}
+
+/* Site buttons. Fixed 168x24, wrapping to as many rows as the header needs.
+   Long labels shrink to fit (see the render script) rather than clipping. */
+header nav{display:flex;flex-wrap:wrap;gap:6px;margin-left:12px;flex:1 1 auto;min-width:0}
+header nav a{color:#fff;text-decoration:none;font:600 11px/1 var(--sans);letter-spacing:.3px;text-transform:uppercase;flex:none;width:168px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;white-space:nowrap;overflow:hidden;border:1px solid #6e6e6d;border-radius:4px;background:linear-gradient(to bottom,#858584,#767675);box-shadow:0 1px 2px rgba(0,0,0,.3)}
+header nav a:hover{background:linear-gradient(to bottom,#767675,#666665)}
+header nav a.on{background:linear-gradient(to bottom,#78b81a,#5a9010);border-color:#4e7d0e;color:#fff}  /* selected: F5 green */
+
+/* Filter box. Fixed 220px, pinned to the right edge of the header. */
+#filter{flex:none;width:220px;margin-left:auto;align-self:flex-start;padding:5px 8px;font:13px var(--mono);background:var(--input);border:1px solid var(--input-line);color:var(--ink)}
+#filter::placeholder{font-style:italic;color:#999}
+#filter:focus{outline:none;border-color:var(--focus);box-shadow:0 0 0 3px rgba(108,166,18,.1)}
+
+/* ---------------------------------------------------------------------------
+   Card groups and grid. Sites have no heading; Cloud and BIG-IQ do.
+   Columns: 4 above 1320px, 3 above 980px, 2 above 640px, else 1.
+   --------------------------------------------------------------------------- */
+.group{margin:0 0 22px}
+.group>h2{margin:0 0 12px;font:normal 16px var(--sans);letter-spacing:.5px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,var(--card,320px));gap:16px;justify-content:center}
+@media (max-width:640px){.grid{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------------------
+   Cards. One per site, cloud provider, or BIG-IQ. White body, slate title bar.
+   --------------------------------------------------------------------------- */
+.device{background:#fff;box-shadow:var(--shadow);border-radius:4px;overflow:hidden}
+.device>h3{margin:0;padding:10px 14px;background:var(--section);color:var(--section-ink);font-size:15px;font-weight:600;display:flex;align-items:center;gap:10px}
+.device>h3 .sub{color:#fff;font-weight:normal;font-size:12px;margin-left:auto;opacity:.85}  /* optional right-aligned subtitle */
+
+/* Table rows. No header row, no zebra striping. Long names truncate with an ellipsis. */
+table{border-collapse:collapse;width:100%;background:#fff;table-layout:fixed}
+td{padding:5px 8px;border-bottom:1px solid #e9e8e5;vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Band rows: zone / vCMP Hosts / GTM section labels within a card. */
+tbody tr.zone td{background:#ebeae7;color:#333;font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.4px;padding:5px 8px}
+/* Device links look like plain text until hovered, as in TMUI list views. */
+td a{color:#3d6382;text-decoration:none}
+td a:hover{color:#28455c;text-decoration:underline}
+/* Entry with no fqdn or url: rendered red and unlinked so the data error is visible. */
+td .nolink{color:var(--bad)}
+/* Notice shown at the top of the page when a data block failed to parse. */
+.parse-error{margin:0 0 16px;padding:8px 12px;background:#FBDCE1;color:var(--bad);border:1px solid var(--bad);border-radius:4px;font:600 12px var(--sans)}
+</style>
+</head>
+<body>
+<header>
+  <!-- LOGO: see the LOGO note in the banner at the top of this file. -->
+  <img class="logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='51' height='53'%3E%3Crect width='51' height='53' rx='6' fill='%23e21d38'/%3E%3Ctext x='50%25' y='58%25' text-anchor='middle' dominant-baseline='middle' font-family='Arial' font-weight='700' font-size='26' fill='%23fff'%3EF5%3C/text%3E%3C/svg%3E" alt="F5">
+  <h1>BIG-IP Topology</h1>
+  <nav id="nav"></nav>
+  <input id="filter" type="search" placeholder="filter" autocomplete="off">
+</header>
+<main id="main"></main>
+
+<!--
+  Data blocks. Each site, cloud provider, and BIG-IQ is emitted as its own
+  <script> tag that pushes onto SITES / CLOUD or assigns BIGIQ. A parse error
+  in one block removes only its own card and is reported at the top of the
+  page. Editing guidance is in the banner at the top of this file.
+--><script>
+/* Registries. Declared once. Data blocks below push into them. */
+const SITES = [], CLOUD = [];
+let BIGIQ = null;
+/* Records any data block that fails to parse so the page can report it. */
+const PARSE_ERRORS = [];
+window.addEventListener('error', e => {
+  if (e.message && /Unexpected|Invalid|missing|Unterminated/i.test(e.message)) PARSE_ERRORS.push(`line ${e.lineno}: ${e.message}`);
+});
+</script>
+<!-- Generated by Big-IP-Reach.ps1 2.0 from match.conf 2026-09-29 11:15 -->
+<script>
+/* site: site01 */
+SITES.push({ id:'site01', name:'Ashburn', enabled:true,
+  guests:[
+    { name:'ash-dmz-waf01a', fqdn:'ash-dmz-waf01a.corp.example', zone:'DMZ', host:'ash-vcmp01', nets:['10.1.10.0/24', '10.1.11.0/24'] },
+    { name:'ash-dmz-waf01b', fqdn:'ash-dmz-waf01b.corp.example', zone:'DMZ', host:'ash-vcmp02', nets:['10.1.10.0/24', '10.1.11.0/24'] },
+    { name:'ash-app-ltm01a', fqdn:'ash-app-ltm01a.corp.example', zone:'App', host:'ash-vcmp01', nets:['10.1.20.0/24', '10.1.21.0/24'] },
+    { name:'ash-app-ltm01b', fqdn:'ash-app-ltm01b.corp.example', zone:'App', host:'ash-vcmp02', nets:['10.1.20.0/24', '10.1.21.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'ash-vcmp01', fqdn:'ash-vcmp01.corp.example' },
+    { name:'ash-vcmp02', fqdn:'ash-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'ash-gtm01', fqdn:'ash-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site02 */
+SITES.push({ id:'site02', name:'Dallas', enabled:true,
+  guests:[
+    { name:'dal-dmz-waf01a', fqdn:'dal-dmz-waf01a.corp.example', zone:'DMZ', host:'dal-vcmp01', nets:['10.2.10.0/24', '10.2.11.0/24'] },
+    { name:'dal-dmz-waf01b', fqdn:'dal-dmz-waf01b.corp.example', zone:'DMZ', host:'dal-vcmp02', nets:['10.2.10.0/24', '10.2.11.0/24'] },
+    { name:'dal-app-ltm01a', fqdn:'dal-app-ltm01a.corp.example', zone:'App', host:'dal-vcmp01', nets:['10.2.20.0/24', '10.2.21.0/24'] },
+    { name:'dal-app-ltm01b', fqdn:'dal-app-ltm01b.corp.example', zone:'App', host:'dal-vcmp02', nets:['10.2.20.0/24', '10.2.21.0/24'] },
+    { name:'dal-internal-ltm01a', fqdn:'dal-internal-ltm01a.corp.example', zone:'Internal', host:'dal-vcmp01', nets:['10.2.30.0/24', '10.2.31.0/24'] },
+    { name:'dal-internal-ltm01b', fqdn:'dal-internal-ltm01b.corp.example', zone:'Internal', host:'dal-vcmp02', nets:['10.2.30.0/24', '10.2.31.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'dal-vcmp01', fqdn:'dal-vcmp01.corp.example' },
+    { name:'dal-vcmp02', fqdn:'dal-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'dal-gtm01', fqdn:'dal-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site03 */
+SITES.push({ id:'site03', name:'Phoenix', enabled:true,
+  guests:[
+    { name:'phx-dmz-waf01a', fqdn:'phx-dmz-waf01a.corp.example', zone:'DMZ', host:'phx-vcmp01', nets:['10.3.10.0/24', '10.3.11.0/24'] },
+    { name:'phx-dmz-waf01b', fqdn:'phx-dmz-waf01b.corp.example', zone:'DMZ', host:'phx-vcmp02', nets:['10.3.10.0/24', '10.3.11.0/24'] },
+    { name:'phx-app-ltm01a', fqdn:'phx-app-ltm01a.corp.example', zone:'App', host:'phx-vcmp01', nets:['10.3.20.0/24', '10.3.21.0/24'] },
+    { name:'phx-app-ltm01b', fqdn:'phx-app-ltm01b.corp.example', zone:'App', host:'phx-vcmp02', nets:['10.3.20.0/24', '10.3.21.0/24'] },
+    { name:'phx-internal-ltm01a', fqdn:'phx-internal-ltm01a.corp.example', zone:'Internal', host:'phx-vcmp01', nets:['10.3.30.0/24', '10.3.31.0/24'] },
+    { name:'phx-internal-ltm01b', fqdn:'phx-internal-ltm01b.corp.example', zone:'Internal', host:'phx-vcmp02', nets:['10.3.30.0/24', '10.3.31.0/24'] },
+    { name:'phx-pci-ltm01a', fqdn:'phx-pci-ltm01a.corp.example', zone:'PCI', host:'phx-vcmp01', nets:['10.3.40.0/24', '10.3.41.0/24'] },
+    { name:'phx-pci-ltm01b', fqdn:'phx-pci-ltm01b.corp.example', zone:'PCI', host:'phx-vcmp02', nets:['10.3.40.0/24', '10.3.41.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'phx-vcmp01', fqdn:'phx-vcmp01.corp.example' },
+    { name:'phx-vcmp02', fqdn:'phx-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'phx-gtm01', fqdn:'phx-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site04 */
+SITES.push({ id:'site04', name:'Chicago', enabled:true,
+  guests:[
+    { name:'chi-dmz-waf01a', fqdn:'chi-dmz-waf01a.corp.example', zone:'DMZ', host:'chi-vcmp01', nets:['10.4.10.0/24', '10.4.11.0/24'] },
+    { name:'chi-dmz-waf01b', fqdn:'chi-dmz-waf01b.corp.example', zone:'DMZ', host:'chi-vcmp02', nets:['10.4.10.0/24', '10.4.11.0/24'] },
+    { name:'chi-app-ltm01a', fqdn:'chi-app-ltm01a.corp.example', zone:'App', host:'chi-vcmp01', nets:['10.4.20.0/24', '10.4.21.0/24'] },
+    { name:'chi-app-ltm01b', fqdn:'chi-app-ltm01b.corp.example', zone:'App', host:'chi-vcmp02', nets:['10.4.20.0/24', '10.4.21.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'chi-vcmp01', fqdn:'chi-vcmp01.corp.example' },
+    { name:'chi-vcmp02', fqdn:'chi-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'chi-gtm01', fqdn:'chi-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site05 */
+SITES.push({ id:'site05', name:'Atlanta', enabled:true,
+  guests:[
+    { name:'atl-dmz-waf01a', fqdn:'atl-dmz-waf01a.corp.example', zone:'DMZ', host:'atl-vcmp01', nets:['10.5.10.0/24', '10.5.11.0/24'] },
+    { name:'atl-dmz-waf01b', fqdn:'atl-dmz-waf01b.corp.example', zone:'DMZ', host:'atl-vcmp02', nets:['10.5.10.0/24', '10.5.11.0/24'] },
+    { name:'atl-app-ltm01a', fqdn:'atl-app-ltm01a.corp.example', zone:'App', host:'atl-vcmp01', nets:['10.5.20.0/24', '10.5.21.0/24'] },
+    { name:'atl-app-ltm01b', fqdn:'atl-app-ltm01b.corp.example', zone:'App', host:'atl-vcmp02', nets:['10.5.20.0/24', '10.5.21.0/24'] },
+    { name:'atl-internal-ltm01a', fqdn:'atl-internal-ltm01a.corp.example', zone:'Internal', host:'atl-vcmp01', nets:['10.5.30.0/24', '10.5.31.0/24'] },
+    { name:'atl-internal-ltm01b', fqdn:'atl-internal-ltm01b.corp.example', zone:'Internal', host:'atl-vcmp02', nets:['10.5.30.0/24', '10.5.31.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'atl-vcmp01', fqdn:'atl-vcmp01.corp.example' },
+    { name:'atl-vcmp02', fqdn:'atl-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'atl-gtm01', fqdn:'atl-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site06 */
+SITES.push({ id:'site06', name:'Denver', enabled:true,
+  guests:[
+    { name:'den-dmz-waf01a', fqdn:'den-dmz-waf01a.corp.example', zone:'DMZ', host:'den-vcmp01', nets:['10.6.10.0/24', '10.6.11.0/24'] },
+    { name:'den-dmz-waf01b', fqdn:'den-dmz-waf01b.corp.example', zone:'DMZ', host:'den-vcmp02', nets:['10.6.10.0/24', '10.6.11.0/24'] },
+    { name:'den-app-ltm01a', fqdn:'den-app-ltm01a.corp.example', zone:'App', host:'den-vcmp01', nets:['10.6.20.0/24', '10.6.21.0/24'] },
+    { name:'den-app-ltm01b', fqdn:'den-app-ltm01b.corp.example', zone:'App', host:'den-vcmp02', nets:['10.6.20.0/24', '10.6.21.0/24'] },
+    { name:'den-internal-ltm01a', fqdn:'den-internal-ltm01a.corp.example', zone:'Internal', host:'den-vcmp01', nets:['10.6.30.0/24', '10.6.31.0/24'] },
+    { name:'den-internal-ltm01b', fqdn:'den-internal-ltm01b.corp.example', zone:'Internal', host:'den-vcmp02', nets:['10.6.30.0/24', '10.6.31.0/24'] },
+    { name:'den-pci-ltm01a', fqdn:'den-pci-ltm01a.corp.example', zone:'PCI', host:'den-vcmp01', nets:['10.6.40.0/24', '10.6.41.0/24'] },
+    { name:'den-pci-ltm01b', fqdn:'den-pci-ltm01b.corp.example', zone:'PCI', host:'den-vcmp02', nets:['10.6.40.0/24', '10.6.41.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'den-vcmp01', fqdn:'den-vcmp01.corp.example' },
+    { name:'den-vcmp02', fqdn:'den-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'den-gtm01', fqdn:'den-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site07 */
+SITES.push({ id:'site07', name:'Seattle', enabled:true,
+  guests:[
+    { name:'sea-dmz-waf01a', fqdn:'sea-dmz-waf01a.corp.example', zone:'DMZ', host:'sea-vcmp01', nets:['10.7.10.0/24', '10.7.11.0/24'] },
+    { name:'sea-dmz-waf01b', fqdn:'sea-dmz-waf01b.corp.example', zone:'DMZ', host:'sea-vcmp02', nets:['10.7.10.0/24', '10.7.11.0/24'] },
+    { name:'sea-app-ltm01a', fqdn:'sea-app-ltm01a.corp.example', zone:'App', host:'sea-vcmp01', nets:['10.7.20.0/24', '10.7.21.0/24'] },
+    { name:'sea-app-ltm01b', fqdn:'sea-app-ltm01b.corp.example', zone:'App', host:'sea-vcmp02', nets:['10.7.20.0/24', '10.7.21.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'sea-vcmp01', fqdn:'sea-vcmp01.corp.example' },
+    { name:'sea-vcmp02', fqdn:'sea-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'sea-gtm01', fqdn:'sea-gtm01.corp.example' } ] });
+</script>
+<script>
+/* site: site08 */
+SITES.push({ id:'site08', name:'Boston', enabled:true,
+  guests:[
+    { name:'bos-dmz-waf01a', fqdn:'bos-dmz-waf01a.corp.example', zone:'DMZ', host:'bos-vcmp01', nets:['10.8.10.0/24', '10.8.11.0/24'] },
+    { name:'bos-dmz-waf01b', fqdn:'bos-dmz-waf01b.corp.example', zone:'DMZ', host:'bos-vcmp02', nets:['10.8.10.0/24', '10.8.11.0/24'] },
+    { name:'bos-app-ltm01a', fqdn:'bos-app-ltm01a.corp.example', zone:'App', host:'bos-vcmp01', nets:['10.8.20.0/24', '10.8.21.0/24'] },
+    { name:'bos-app-ltm01b', fqdn:'bos-app-ltm01b.corp.example', zone:'App', host:'bos-vcmp02', nets:['10.8.20.0/24', '10.8.21.0/24'] },
+    { name:'bos-internal-ltm01a', fqdn:'bos-internal-ltm01a.corp.example', zone:'Internal', host:'bos-vcmp01', nets:['10.8.30.0/24', '10.8.31.0/24'] },
+    { name:'bos-internal-ltm01b', fqdn:'bos-internal-ltm01b.corp.example', zone:'Internal', host:'bos-vcmp02', nets:['10.8.30.0/24', '10.8.31.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'bos-vcmp01', fqdn:'bos-vcmp01.corp.example' },
+    { name:'bos-vcmp02', fqdn:'bos-vcmp02.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'bos-gtm01', fqdn:'bos-gtm01.corp.example' } ] });
+</script>
+<script>
+/* cloud: aws-use1 */
+CLOUD.push({ id:'aws-use1', name:'AWS us-east-1', enabled:true, devices:[
+    { name:'aws-use1-ltm01', fqdn:'aws-use1-ltm01.corp.example', nets:['172.31.10.0/24', '172.31.11.0/24'] },
+    { name:'aws-use1-ltm02', fqdn:'aws-use1-ltm02.corp.example' } ],
+  gtmEnabled:false, gtm:[
+ ] });
+</script>
+<script>
+/* cloud: az-eus */
+CLOUD.push({ id:'az-eus', name:'Azure East US', enabled:true, devices:[
+    { name:'az-eus-ltm01', fqdn:'az-eus-ltm01.corp.example', nets:['172.30.10.0/24'] },
+    { name:'az-eus-ltm02', fqdn:'az-eus-ltm02.corp.example' } ],
+  gtmEnabled:false, gtm:[
+ ] });
+</script>
+<script>
+/* bigiq */
+BIGIQ = { id:'bigiq', name:'BIG-IQ', enabled:true, devices:[
+    { name:'CM Primary (Ashburn)', fqdn:'biq-cm01.corp.example' },
+    { name:'CM Secondary (Dallas)', fqdn:'biq-cm02.corp.example' },
+    { name:'DCD Ashburn 1', fqdn:'biq-dcd-ash01.corp.example' },
+    { name:'DCD Ashburn 2', fqdn:'biq-dcd-ash02.corp.example' },
+    { name:'DCD Dallas 1', fqdn:'biq-dcd-dal01.corp.example' } ] };
+</script>
+<!-- ====================== RENDER (do not edit) ====================== -->
+<script>
+/* ============================================================================
+   RENDER. Everything from here to the end of the file draws the page from
+   TOPOLOGY. Do not edit for data changes; nothing below reads anything but
+   the fields documented above.
+   ============================================================================ */
+
+/* HTML-escape a value before inserting it into markup. Applied to every
+   data field so a stray < or " in a hostname cannot break the page. */
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* Link target for a device: explicit url if given, else https://<fqdn>. */
+const url = d => d.url || ('https://' + d.fqdn);
+
+/* One device row. data-k holds the lowercase text the filter matches on:
+   the name, the fqdn, and the band the row sits under (its zone, or the
+   vCMP Hosts / GTM label), so  vcmp  and  gtm  find those rows whatever the
+   hostnames are. Entries with neither fqdn nor url render as red plain text. */
+function row(d, label) {
+  const nets = Array.isArray(d.nets) ? d.nets.join(' ') : '';
+  return `<tr data-k="${esc([d.name, d.fqdn, d.zone || label].filter(Boolean).join(' ').toLowerCase())}"${nets ? ` data-n="${esc(nets)}"` : ''}>
+    <td>${d.fqdn || d.url
+      ? `<a href="${esc(url(d))}" target="_blank" title="${esc(d.fqdn || d.url)}">${esc(d.name)}</a>`
+      : `<span class="nolink" title="no fqdn or url in data">${esc(d.name)}</span>`}</td></tr>`;
+}
+
+/* Section label row inside a card. */
+const band = label => `<tr class="zone"><td>${esc(label)}</td></tr>`;
+
+/* Site card body: one band per zone in first-seen order with its tenants,
+   then vCMP Hosts, then GTM. */
+function siteTable(s) {
+  const guests = s.guests || [];
+  const zones = [...new Set(guests.map(g => g.zone).filter(Boolean))];
+  let body = '';
+  for (const z of zones) {
+    const rows = guests.filter(g => g.zone === z);
+    if (rows.length) body += band(z) + rows.map(d => row(d)).join('');
+  }
+  const unassigned = guests.filter(g => !g.zone);
+  if (unassigned.length) body += band('Unassigned zone') + unassigned.map(d => row(d, 'Unassigned zone')).join('');
+  if (s.hostsEnabled !== false && s.hosts?.length) body += band('vCMP Hosts') + s.hosts.map(d => row(d, 'vCMP Hosts')).join('');
+  if (s.gtmEnabled === true && s.gtm?.length) body += band('GTM') + s.gtm.map(d => row(d, 'GTM')).join('');
+  return `<table><tbody>${body}</tbody></table>`;
+}
+
+/* Cloud and BIG-IQ card body: plain device list, then an optional GTM band
+   (cloud only) when gtmEnabled is true and gtm[] has entries. */
+function flatTable(c) {
+  let body = (c.devices || []).map(d => row(d)).join('');
+  if (c.gtmEnabled === true && c.gtm?.length) body += band('GTM') + c.gtm.map(d => row(d, 'GTM')).join('');
+  return `<table><tbody>${body}</tbody></table>`;
+}
+
+/* Card wrapper. id must match the nav button's data-id. */
+/* Card wrapper. data-group lets the filter select a whole group by name
+   (sites, cloud, bigiq). */
+function panel(id, title, sub, inner, group) {
+  return `<div class="device" id="${esc(id)}" data-group="${esc(group)}"><h3>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h3>${inner}</div>`;
+}
+
+/* An entry is live unless it carries enabled:false. */
+const live = x => x && x.enabled !== false;
+
+/* Assemble the data registries into one object. */
+const TOPOLOGY = { get sites() { return SITES; }, get cloud() { return CLOUD; }, get bigiq() { return BIGIQ; } };
+
+/* Build the cards and nav buttons from the data. Called once on load. */
+/* Set every card to one width, sized to the longest device name or card title
+   so cards are consistent and no wider than their content. Clamped 240-480px. */
+function sizeCards() {
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;font:13px var(--sans)';
+  document.body.appendChild(probe);
+  let w = 0;
+  for (const el of document.querySelectorAll('td a, td .nolink')) { probe.textContent = el.textContent; w = Math.max(w, probe.offsetWidth); }
+  probe.style.font = '600 15px var(--sans)';
+  for (const h of document.querySelectorAll('.device > h3')) { probe.textContent = h.textContent; w = Math.max(w, probe.offsetWidth); }
+  probe.remove();
+  const card = Math.min(480, Math.max(240, Math.ceil(w) + 40));   /* name + cell padding */
+  document.documentElement.style.setProperty('--card', card + 'px');
+}
+
+function render() {
+  const t = TOPOLOGY;
+  const sites = (t.sites || []).filter(live);
+  const cloud = (t.cloud || []).filter(live);
+  const bigiq = live(t.bigiq) ? [t.bigiq] : [];
+  let html = '';
+  /* Compare each data tag's header comment against what actually loaded.
+     A tag whose id never reached its registry failed to parse. */
+  const missing = [];
+  for (const sc of document.querySelectorAll('script')) {
+    const m = sc.textContent.match(/^\s*\/\* (site|cloud): ([\w-]+) \*\//);
+    if (m && !(m[1] === 'site' ? SITES : CLOUD).some(x => x.id === m[2])) missing.push(`${m[1]} ${m[2]}`);
+    if (/^\s*\/\* bigiq \*\//.test(sc.textContent) && !BIGIQ) missing.push('bigiq');
+  }
+  if (missing.length || PARSE_ERRORS.length) {
+    html += `<div class="parse-error">Data block failed to load${missing.length ? ': ' + missing.map(esc).join(', ') : ''}. `
+      + `That card is missing. ${PARSE_ERRORS.map(esc).join('; ')} Open the browser console (F12) for details.</div>`;
+  }
+  html += '<section class="group"><h2>Sites</h2><div class="grid">';
+  for (const s of sites) html += panel(s.id, s.name, s.location, siteTable(s), 'sites');
+  html += '</div></section>';
+  if (cloud.length) {
+    html += '<section class="group"><h2>Cloud</h2><div class="grid">';
+    for (const c of cloud) html += panel(c.id, c.name, 'Virtual Edition', flatTable(c), 'cloud');
+    html += '</div></section>';
+  }
+  for (const b of bigiq) html += `<section class="group"><h2>${esc(b.name)}</h2><div class="grid">${panel(b.id, b.name, '', flatTable(b), 'bigiq')}</div></section>`;
+  if (!sites.length && !cloud.length && !bigiq.length) html += '<div class="parse-error">No data blocks loaded.</div>';
+  document.getElementById('main').innerHTML = html;
+  sizeCards();
+
+  /* One button per card, plus an "All" button that clears the selection. */
+  const nav = document.getElementById('nav');
+  const items = [{id:'all', name:'All'}, ...sites, ...cloud, ...bigiq];
+  nav.innerHTML = items.map(x => `<a href="#" data-id="${esc(x.id)}" title="${esc(x.name)}"${x.id === 'all' ? ' class="on"' : ''}>${esc(x.name)}</a>`).join('');
+  /* Shrink the font on any button whose label is wider than the button, so it
+     stays centered and whole rather than clipping. Floor at 8px. */
+  for (const a of nav.querySelectorAll('a')) {
+    let px = 11;
+    while (a.scrollWidth > a.clientWidth && px > 8) { a.style.fontSize = (--px) + 'px'; }
+  }
+  updateNavRows();
+}
+
+/* The header centres its single row of buttons on the title; with more rows
+   the logo, title and filter pin to the top instead. */
+function updateNavRows() {
+  const nav = document.getElementById('nav');
+  const a = nav.querySelectorAll('a');
+  if (!a.length) return;
+  const top = Math.round(a[0].getBoundingClientRect().top);
+  let single = true;
+  for (const el of a) { if (Math.round(el.getBoundingClientRect().top) !== top) { single = false; break; } }
+  nav.parentElement.classList.toggle('nav-single', single);
+}
+window.addEventListener('resize', updateNavRows);
+
+/* Registered once; render() replaces the buttons but not the nav element. */
+document.getElementById('nav').addEventListener('click', e => {
+  const a = e.target.closest('a'); if (!a) return;
+  e.preventDefault();            /* no anchor jump; the page must not scroll */
+  const id = a.dataset.id;
+  if ((e.ctrlKey || e.metaKey) && id !== 'all') { toggleSelect(id); }
+  else { selectOnly(id); }
+  apply();
+});
+
+/* ============================================================================
+   FILTER AND SELECTION
+   Two inputs combine: the selected button (one card or all) and the filter
+   text. apply() recomputes visibility for every row, band, card and group.
+   ============================================================================ */
+
+/* Selection is a set of data-ids. It contains 'all' (everything) or one or
+   more specific card ids. Plain click selects one; Ctrl/Cmd+click toggles a
+   card in or out of a multi-selection. */
+const selected = new Set(['all']);
+function selectOnly(id) { selected.clear(); selected.add(id); }
+function toggleSelect(id) {
+  selected.delete('all');
+  if (selected.has(id)) { selected.delete(id); } else { selected.add(id); }
+  if (selected.size === 0) selected.add('all');
+}
+
+/* Normalise for matching: lowercase, drop spaces, hyphens, underscores.
+   Lets "site 2", "site2" and "Site-2" all match "site2-...". */
+const norm = t => t.toLowerCase().replace(/[\s_-]+/g, '');
+
+/* IPv4 terms. A query word that is an address or a cidr also matches a row
+   through its data-n subnets: an address matches a subnet that contains it,
+   a cidr matches a subnet that overlaps it. Text matching still applies, so
+   a device listed by its management IP is found either way. */
+const RX_IP4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/;
+function cidr(t) {
+  const m = RX_IP4.exec(t); if (!m) return null;
+  const o = m.slice(1, 5).map(Number); if (o.some(x => x > 255)) return null;
+  const bits = m[5] === undefined ? 32 : Number(m[5]); if (bits > 32) return null;
+  const ip = ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0;
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return { net: (ip & mask) >>> 0, bits };
+}
+const overlaps = (a, b) => {
+  const bits = Math.min(a.bits, b.bits);
+  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
+  return ((a.net & mask) >>> 0) === ((b.net & mask) >>> 0);
+};
+/* A partly typed address (10. or 10.2 or 10.2.11) is a prefix of the subnet
+   text, so the page narrows as each digit is typed. A complete address or
+   cidr is also tested for containment or overlap. */
+const RX_IP4_PART = /^\d{1,3}(?:\.\d{0,3}){0,3}(?:\/\d{0,2})?$/;
+function netHit(tr, t) {
+  const n = tr.dataset.n; if (!n || !RX_IP4_PART.test(t)) return false;
+  const nets = n.split(' ');
+  if (nets.some(x => x.startsWith(t))) return true;
+  const q = cidr(t); if (!q) return false;
+  return nets.some(x => { const c = cidr(x); return c && overlaps(c, q); });
+}
+
+function apply() {
+  /* The query is a comma-separated list of groups; a row matches if it
+     satisfies ANY group (OR across commas). Within a group, space-separated
+     terms must ALL be found (AND within a group). So  nash app  narrows to
+     Nashville's app rows, while  mumbai, cairo  gathers both cities.
+     Each term matches the row key or the card title, so a title word (a site
+     name) can be one of the AND terms. */
+  const raw = document.getElementById('filter').value;
+  /* A card's scope key is its title plus its group name, so  sites, cloud,
+     bigiq (or iq)  select a whole group the same way a site name selects
+     one card. */
+  const scopeOf = card => norm(card.querySelector('h3').textContent) + ' ' + (card.dataset.group || '');
+  const titles = [...document.querySelectorAll('.device')].map(scopeOf);
+  const isSite = t => titles.some(title => title.includes(t));
+
+  /* Query grammar
+       word          row term: the row key must contain it (AND within a group)
+       site word     a word found in some card title selects that site; several
+                     site words OR together, since a device is in one site
+       ,             starts a new row group; it keeps the previous group's sites
+                     unless it names its own
+       -word / !word NOT: applies to the whole query. A site word hides that
+                     card; any other word hides matching rows.
+       "word"        forces a row term even when the word occurs in a card
+                     title, so  "app"  finds app rows when a site is named
+                     Appleton. Single quotes work the same way.
+     Examples
+       denver app                    Denver's app rows
+       denver chicago dmz, app       dmz and app rows in either site
+       -aws -azure -bigiq            everything except those cards
+       denver -dmz                   Denver without its dmz rows
+       appleton "app"                Appleton's app rows                    */
+  const negSites = [], negRows = [];
+  const groups = [];
+  for (const chunk of raw.split(',')) {
+    const g = [];
+    for (const word of chunk.split(/\s+/)) {
+      if (!word) continue;
+      let w = word;
+      const neg = w[0] === '-' || w[0] === '!';
+      if (neg) w = w.slice(1);
+      const quoted = /^["']/.test(w);
+      const t = norm(w.replace(/^["']|["']$/g, ''));
+      if (!t) continue;
+      const site = !quoted && isSite(t);
+      if (neg) { (site ? negSites : negRows).push(t); } else { g.push({ t, site }); }
+    }
+    if (g.length) groups.push(g);
+  }
+  let carry = [];
+  const parsed = groups.map(g => {
+    const sites = g.filter(x => x.site).map(x => x.t), terms = g.filter(x => !x.site).map(x => x.t);
+    if (sites.length) carry = sites;
+    return { sites: sites.length ? sites : carry, terms };
+  });
+  const q = parsed.length > 0 || negSites.length > 0 || negRows.length > 0;
+  /* Selected buttons and filter scope words add together: a card shows if
+     it is selected or named in the filter, so three selected sites plus
+     cloud iq  show all five cards. Row terms narrow every card in that set;
+     NOT words remove from it. */
+  const showAll = selected.has('all');
+  const scoped = parsed.some(g => g.sites.length > 0);
+  document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', selected.has(a.dataset.id)));
+
+  document.querySelectorAll('.device').forEach(card => {
+    const title = scopeOf(card);
+    const picked = selected.has(card.id);
+    const named = parsed.some(g => g.sites.some(t => title.includes(t)));
+    const excluded = negSites.some(t => title.includes(t)) || (!showAll && !picked && !named) || (showAll && scoped && !named);
+    /* Groups whose site terms admit this card, or that name no site. A
+       selected card also takes the row terms of every group. */
+    const mine = parsed.filter(g => picked || !g.sites.length || g.sites.some(t => title.includes(t)));
+    let any = false;
+    card.querySelectorAll('tbody').forEach(tb => {
+      let currentBand = null, kept = 0;
+      for (const tr of tb.rows) {
+        if (tr.classList.contains('zone')) {
+          if (currentBand) currentBand.classList.toggle('hide', q && kept === 0);
+          currentBand = tr; kept = 0; continue;
+        }
+        const key = norm(tr.dataset.k || '');
+        const has = t => key.includes(t) || netHit(tr, t);
+        const hit = !excluded
+          && !negRows.some(has)
+          && (!parsed.length || mine.some(g => g.terms.every(has)));
+        tr.classList.toggle('hide', !hit);
+        if (hit) { kept++; any = true; }
+      }
+      if (currentBand) currentBand.classList.toggle('hide', q && kept === 0);
+    });
+    card.classList.toggle('hide', excluded || (q && !any));
+  });
+  /* Group headings (Cloud, BIG-IQ) hide when none of their cards are visible. */
+  document.querySelectorAll('.group').forEach(g => g.classList.toggle('hide', !g.querySelector('.device:not(.hide)')));
+}
+
+const filter = document.getElementById('filter');
+filter.addEventListener('input', apply);
+
+/* Keyboard: Escape clears the filter and returns to All.
+   "/" or Ctrl+K (Cmd+K) focuses the filter box. */
+document.addEventListener('keydown', e => {
+  /* Alt+F focuses the filter, Alt+C clears it. Escape also clears and blurs. */
+  if (e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); filter.focus(); filter.select(); return; }
+  if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); filter.value = ''; selectOnly('all'); apply(); filter.focus(); return; }
+  if (e.key === 'Escape') { filter.value = ''; selectOnly('all'); apply(); filter.blur(); return; }
+  if ((e.key === '/' && document.activeElement !== filter) || (e.key === 'k' && (e.ctrlKey || e.metaKey))) {
+    e.preventDefault(); filter.focus(); filter.select();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
