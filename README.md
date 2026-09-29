@@ -66,7 +66,7 @@ site2|host|den-r5900-01.example.com
 site2|tenant|External|den-ext-ltm01a.example.com
 ```
 
-Subnets attach to a device already in the block, by shown name or FQDN, and never appear on the page. They exist so an address found in DNS leads to the devices that serve it:
+Subnets attach to a device already in the block, by shown name or FQDN:
 
 ```
 dc1|subnet|chi-ext-ltm01a|198.51.100.0/24,203.0.113.0/26
