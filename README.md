@@ -94,8 +94,6 @@ bigiq|device|bigiq-cm01.example.com
 bigiq|device|10.0.0.6
 ```
 
-The [examples](examples/) folder contains five complete configs modeled on different kinds of organizations (a retail bank, a cloud-first SaaS company, a global manufacturer, a university, and a managed service provider), plus a 50-site stress config.
-
 ## Procedure
 
 ### 1. Export the starter config
