@@ -1,8 +1,10 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces from one page. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script; there is no server, no database, and no runtime. The output is a single HTML file that opens from a file share, an internal web server, a USB stick, an email attachment, or directly off disk with `file:///` on a host with no network at all.
+An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script.
 
 The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. Editing is a text file; publishing is a copy.
+
+<img width="2203" height="1207" alt="Image" src="https://github.com/user-attachments/assets/19c31a7d-aad8-445d-9b53-c7ae501a2472" />
 
 ## How it works
 
@@ -20,10 +22,7 @@ Files are written next to the script unless a path is given. The typical workflo
 
 ## Requirements
 
-- Windows PowerShell 5.1 or PowerShell 7 or greater. No modules, no internet.
-- A text editor for the config.
-- A browser to open the generated page.
-- Python 3 and Playwright are needed only to run the optional test suite; the tool itself needs neither.
+- Windows PowerShell 5.1 or PowerShell 7 or greater.
 
 ## The config format
 
@@ -42,7 +41,7 @@ One record per line, `id|category|value[|extra]`. Blank lines and lines beginnin
 #           host      device                        Site only. vCMP host.
 #           gtmdev    device                        Site or cloud. GTM device.
 #           device    device                        Cloud or bigiq.
-#           subnet    device|cidr[,cidr...]         IPv4 subnets a device serves. Not shown; searchable.
+#           subnet    device|cidr[,cidr...]         IPv4 subnets a device serves. Not shown but searchable.
 #
 # device    An FQDN, an IPv4 address, or an https:// URL. The link opens
 #           https://<device>. The shown name is the FQDN's first label or the
@@ -149,24 +148,6 @@ A page made by an earlier version, or one maintained by hand-editing the HTML, d
 ## The logo
 
 The header image is embedded in the generated HTML as a placeholder. To replace it, open the HTML in a text editor and follow the `LOGO` comment near the top: convert a PNG to base64 and paste it into the `src` of the `<img>` tag. Rebuilding from the config restores the placeholder, so to make a logo permanent, make the same edit once inside `Big-IP-Reach.ps1`.
-
-## Notes
-
-- The generated page makes no network calls and uses no browser storage. It is safe to run from `file:///` on an isolated host.
-- The config is the only file you edit for routine changes. The script's boilerplate and render code do not need touching.
-- Each site, cloud provider, and BIG-IQ is emitted as its own `<script>` block in the HTML. A syntax error introduced by a later hand-edit removes only that one card and is reported in red at the top of the page, rather than breaking the whole file.
-- Card width is sized to the longest device name so every card is consistent and no wider than its content.
-- Exit codes: `0` on success, `1` on validation errors (nothing written), `2` on a file or argument problem.
-
-## Testing
-
-`test_topology.py` is an optional Playwright suite covering rendering, filtering, selection, keyboard shortcuts, enable/disable flags, and responsive layout. It is not required to use the tool.
-
-```
-pip install playwright
-playwright install chromium
-python test_topology.py
-```
 
 ## License
 
