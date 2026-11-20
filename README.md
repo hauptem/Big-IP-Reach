@@ -1,12 +1,58 @@
 # F5-BIG-IP-Reach
 
-An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page is generated from a plain-text config by a PowerShell script.
+An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page can be maintained in either of two ways: edited directly as HTML with no other tooling, or generated from a plain-text config by a PowerShell script.
 
 The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. Editing is a text file; publishing is a copy.
 
 <img width="2203" height="1207" alt="Image" src="https://github.com/user-attachments/assets/19c31a7d-aad8-445d-9b53-c7ae501a2472" />
 
-## How it works
+## Two ways to use it
+
+**Method 1: Edit the HTML directly.** `BIG-IP_Topology.html` in this repository is a complete, working page with example data. Download it, open it in a text editor, and replace the example sites and devices with your own. Nothing else is needed: no PowerShell, no build step.
+
+**Method 2: Build with the script.** `Big-IP-Reach.ps1` turns a plain-text config into the page. You keep the config, and the script validates it and rebuilds the HTML whenever it changes. This suits a large or frequently changing estate, anyone who wants errors reported by line number before publishing, and unattended builds.
+
+Pick one and read only that section. Both produce the same page, and the choice is not permanent: a page edited by hand can be read back into a config with `-FromHtml`, and a page built by the script can be edited by hand afterwards.
+
+## Requirements
+
+- Method 1: a text editor.
+- Method 2: Windows PowerShell 5.1 or PowerShell 7 or greater.
+- To view the page: any current browser.
+
+## Method 1: Edit the HTML directly
+
+Open `BIG-IP_Topology.html` in a text editor. The comment block at the top of the file is the manual: it lists how to add, disable, and rename sites, tenants, vCMP hosts, GTM devices, and cloud providers, with a reference for every field.
+
+The data sits in the middle of the file. Each site, cloud provider, and BIG-IQ is its own `<script>` block:
+
+```html
+<script>
+/* site: site01 */
+SITES.push({ id:'site01', name:'Ashburn', enabled:true,
+  guests:[
+    { name:'ash-dmz-waf01a', fqdn:'ash-dmz-waf01a.corp.example', zone:'DMZ', nets:['10.1.10.0/24', '10.1.11.0/24'] },
+    { name:'ash-dmz-waf01b', fqdn:'ash-dmz-waf01b.corp.example', zone:'DMZ', nets:['10.1.10.0/24', '10.1.11.0/24'] } ],
+  hostsEnabled:true, hosts:[
+    { name:'ash-vcmp01', fqdn:'ash-vcmp01.corp.example' } ],
+  gtmEnabled:true, gtm:[
+    { name:'ash-gtm01', fqdn:'ash-gtm01.corp.example' } ] });
+</script>
+```
+
+- To change a site, edit the names and FQDNs inside its block.
+- To add a site, copy a whole block including both `<script>` tags, paste it after the last site, and change the `id` in both places (the `/* site: ... */` comment and the `id:` field) along with the name and devices. Each `id` must be unique.
+- To hide a block without deleting it, set `enabled:false`.
+- To make a device findable by IP address, add `nets:['a.b.c.d/nn', ...]` to its entry. Subnets are never displayed.
+- Leave everything below the `RENDER (do not edit)` marker alone.
+
+Save the file and open it in a browser. Because each block is separate, a typing mistake in one block removes only that card, and a red notice at the top of the page names the block that failed. The browser console (F12) gives the line.
+
+The script checks things that hand-editing does not: duplicate names, invalid addresses and CIDRs, and subnets attached to a device that does not exist. A hand-edited page also stays on the version it was downloaded as. To pick up a newer version, download the new script and run `.\Big-IP-Reach.ps1 -FromHtml` followed by `.\Big-IP-Reach.ps1 -Force`, as described under [Moving an existing page to a newer script](#moving-an-existing-page-to-a-newer-script) in Method 2.
+
+## Method 2: Build with the script
+
+### How it works
 
 The script embeds everything it needs: the HTML boilerplate (styles, header, and render code) and a starter config. Running it with no parameters opens a menu. Running it with parameters does the same steps unattended, for a scheduled task or a CI job.
 
@@ -20,11 +66,7 @@ The script embeds everything it needs: the HTML boilerplate (styles, header, and
 
 Files are written next to the script unless a path is given. The typical workflow is: export the template once, edit it, then build.
 
-## Requirements
-
-- Windows PowerShell 5.1 or PowerShell 7 or greater.
-
-## The config format
+### The config format
 
 One record per line, `id|category|value[|extra]`. Blank lines and lines beginning with `#` are ignored. The exported config carries a full field reference in its header comment; the short version:
 
@@ -95,9 +137,9 @@ bigiq|device|bigiq-cm01.example.com
 bigiq|device|10.0.0.6
 ```
 
-## Procedure
+### Procedure
 
-### 1. Export the starter config
+#### 1. Export the starter config
 
 ```
 .\Big-IP-Reach.ps1 -Export
@@ -105,11 +147,11 @@ bigiq|device|10.0.0.6
 
 This writes `topology.conf` next to the script, pre-filled with example sites, cloud providers, and BIG-IQ so every line type is visible.
 
-### 2. Edit the config
+#### 2. Edit the config
 
 Open `topology.conf` in a text editor. Replace the example names and devices with your own. Set `enabled|false` on any block you want to keep in the file but hide from the page. Only Site 1, AWS, Azure, and BIG-IQ ship enabled; the rest are disabled spares to turn on as needed.
 
-### 3. Validate
+#### 3. Validate
 
 ```
 .\Big-IP-Reach.ps1 -Validate
@@ -117,7 +159,7 @@ Open `topology.conf` in a text editor. Replace the example names and devices wit
 
 Every problem is reported with its line number and nothing is written. Fix and run again until it is clean.
 
-### 4. Build
+#### 4. Build
 
 ```
 .\Big-IP-Reach.ps1 -Force
@@ -125,17 +167,11 @@ Every problem is reported with its line number and nothing is written. Fix and r
 
 This writes `BIG-IP_Topology.html` next to the config. Open it in a browser and confirm the page renders. Two data mistakes are valid syntax and so are not caught at build time; the page shows them instead: a device name in red means the entry has no FQDN or URL, and a band labeled "Unassigned zone" means a tenant has no zone.
 
-### 5. Publish
+#### 5. Publish
 
 Copy `BIG-IP_Topology.html` wherever your team looks for it. It is one self-contained file with no dependencies.
 
-## The page
-
-- **Buttons** across the header select a site, cloud provider, or BIG-IQ. Plain click shows one; Ctrl-click (or Cmd-click) adds or removes cards for a multi-selection. `All` clears the selection.
-- **The filter box** narrows the page as you type, matching device names, FQDNs, band labels (zones, vCMP Hosts, GTM), and card titles, so `vcmp` and `gtm` find those rows whatever the hostnames are. Words that name a site pick sites and OR together; the group words `sites`, `cloud`, and `bigiq` (or `iq`) pick a whole group; other words narrow rows and AND. A comma starts a new row group that keeps the same sites unless it names its own: `denver app` shows Denver's app devices, `denver chicago dmz, app` shows dmz and app devices in either site, `mumbai, cairo` shows both sites. A leading `-` (or `!`) is NOT and applies to the whole query: `-aws -azure -bigiq` shows everything except those cards, `denver -dmz` shows Denver without its dmz devices. Quoting a word (`"app"`) forces a row match when a site name contains the same text. An IPv4 address finds the devices whose subnets contain it, so the address behind an application's DNS name leads to the pair that serves it; a CIDR finds subnets that overlap it, and a partly typed address (`10.2`) narrows as you go. While you type, an address is treated as unfinished, so `204.14.123.1` also shows a device holding `204.14.123.128/25`; press `Enter` to read the field exactly as written and see only the subnet that contains the address. Editing the field returns to as-you-type matching. IPv6 is not supported. Site or group words in the filter add to the button selection, so three selected sites plus `cloud iq` show all five cards. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
-- **The header** grows to as many button rows as needed and never overlaps the logo, title, or filter.
-
-## Moving an existing page to a newer script
+### Moving an existing page to a newer script
 
 A page made by an earlier version, or one maintained by hand-editing the HTML, does not need re-keying. `Import HTML` in the menu (or `-FromHtml` in batch) scans the page's data blocks and writes them out as `topology.conf`, then validates the result. In the menu the page title carries over; in batch it is printed so it can be passed back with `-Title`. Build from that config with the current script and the page picks up whatever the newer version adds. Both quote styles and fields the older page did not have (`hostsEnabled`, say) are handled; a name containing `|`, or a device name containing `=`, is noted and replaced with `/`, since the config cannot hold it. The logo is not carried across, so paste it into the new page as before.
 
@@ -143,6 +179,12 @@ A page made by an earlier version, or one maintained by hand-editing the HTML, d
 .\Big-IP-Reach.ps1 -FromHtml -InputFile old.html -OutputFile topology.conf
 .\Big-IP-Reach.ps1 -Force
 ```
+
+## The page
+
+- **Buttons** across the header select a site, cloud provider, or BIG-IQ. Plain click shows one; Ctrl-click (or Cmd-click) adds or removes cards for a multi-selection. `All` clears the selection.
+- **The filter box** narrows the page as you type, matching device names, FQDNs, band labels (zones, vCMP Hosts, GTM), and card titles, so `vcmp` and `gtm` find those rows whatever the hostnames are. Words that name a site pick sites and OR together; the group words `sites`, `cloud`, and `bigiq` (or `iq`) pick a whole group; other words narrow rows and AND. A comma starts a new row group that keeps the same sites unless it names its own: `denver app` shows Denver's app devices, `denver chicago dmz, app` shows dmz and app devices in either site, `mumbai, cairo` shows both sites. A leading `-` (or `!`) is NOT and applies to the whole query: `-aws -azure -bigiq` shows everything except those cards, `denver -dmz` shows Denver without its dmz devices. Quoting a word (`"app"`) forces a row match when a site name contains the same text. An IPv4 address finds the devices whose subnets contain it, so the address behind an application's DNS name leads to the pair that serves it; a CIDR finds subnets that overlap it, and a partly typed address (`10.2`) narrows as you go. While you type, an address is treated as unfinished, so `204.14.123.1` also shows a device holding `204.14.123.128/25`; press `Enter` to read the field exactly as written and see only the subnet that contains the address. Editing the field returns to as-you-type matching. IPv6 is not supported. Site or group words in the filter add to the button selection, so three selected sites plus `cloud iq` show all five cards. `Alt+F` focuses the filter; `Alt+C` clears it; `Escape` also clears and returns to `All`.
+- **The header** grows to as many button rows as needed and never overlaps the logo, title, or filter.
 
 ## The logo
 
