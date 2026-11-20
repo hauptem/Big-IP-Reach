@@ -2,17 +2,15 @@
 
 An offline, single-file HTML directory for reaching F5 BIG-IP management interfaces. Each device is a link to its management GUI, grouped by site, cloud provider, and BIG-IQ, with a filter box and per-site buttons for finding a unit quickly. The page can be maintained in either of two ways: edited directly as HTML with no other tooling, or generated from a plain-text config by a PowerShell script.
 
-The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. Editing is a text file; publishing is a copy.
+The problem it solves is the one every estate hits eventually: the list of BIG-IP management addresses lives in a spreadsheet, a wiki page, or a hand-edited HTML file that is tedious to update and easy to break. Reach separates the data from the presentation. You edit a readable config, the script regenerates the page, and you drop the file wherever people already bookmark it. 
 
 <img width="2203" height="1207" alt="Image" src="https://github.com/user-attachments/assets/19c31a7d-aad8-445d-9b53-c7ae501a2472" />
 
 ## Two ways to use it
 
-**Method 1: Edit the HTML directly.** `BIG-IP_Topology.html` in this repository is a complete, working page with example data. Download it, open it in a text editor, and replace the example sites and devices with your own. Nothing else is needed: no PowerShell, no build step.
+**Method 1: Edit the HTML directly.** `BIG-IP_Topology.html` in this repository is a complete, working page with example data. Download it, open it in a text editor, and replace the example sites and devices with your own. 
 
-**Method 2: Build with the script.** `Big-IP-Reach.ps1` turns a plain-text config into the page. You keep the config, and the script validates it and rebuilds the HTML whenever it changes. This suits a large or frequently changing estate, anyone who wants errors reported by line number before publishing, and unattended builds.
-
-Pick one and read only that section. Both produce the same page, and the choice is not permanent: a page edited by hand can be read back into a config with `-FromHtml`, and a page built by the script can be edited by hand afterwards.
+**Method 2: Build with the script.** `Big-IP-Reach.ps1` turns a plain-text config into the page. You keep the config, and the script validates it and rebuilds the HTML whenever it changes. 
 
 ## Requirements
 
