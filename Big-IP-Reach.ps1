@@ -35,8 +35,8 @@
 #
 #   id        Block tag: lowercase letters, digits, hyphens; starts with a
 #             letter. The first line naming an id creates the block. Blocks
-#             appear on the page in order of first appearance. "all" is
-#             reserved.
+#             appear on the page in order of first appearance. all, main,
+#             nav and filter are reserved.
 #
 #   category  type      site | cloud | bigiq          Default site. One bigiq.
 #             name      Display label                 Required, once.
@@ -118,6 +118,8 @@ $script:HtmlHead = @'
   ============================================================================
   BIG-IP Topology
 
+  Single-file offline page.
+
    ...........................................................................
    HOW TO
    ...........................................................................
@@ -195,8 +197,7 @@ $script:HtmlHead = @'
    Every device needs name and fqdn. Link target is https://<fqdn> unless
    url is given. A device with neither fqdn nor url is drawn red and
    unlinked. A device may also carry  nets:['10.1.10.0/24', ...]  listing
-   the IPv4 subnets it serves. They are not displayed; the filter matches
-   an IP address to them.
+   the IPv4 subnets it serves.
 
    ...........................................................................
    SYNTAX RULES (the usual cause of a missing card)
@@ -216,7 +217,7 @@ $script:HtmlHead = @'
               card alone. Ctrl-click (Cmd-click) adds or removes cards from a
               multi-selection. All clears the selection. Site or group words
               in the filter add to the selection, so three selected sites
-              plus  cloud iq  show all five cards.
+              plus  'cloud iq'  show all five cards.
   Filter      Matches device names, FQDNs, band labels (zones, vCMP Hosts,
               GTM) and card titles as you type.
               Words that name a site pick sites (several OR together); the
@@ -228,7 +229,10 @@ $script:HtmlHead = @'
               An IPv4 address finds the devices whose subnets contain it
               (and any device listed by that address); a cidr finds
               subnets that overlap it. A partly typed address narrows as
-              you go: 10.2 shows every subnet beginning 10.2.
+              you go: 10.2 shows every subnet beginning 10.2. While you
+              type, an address is treated as unfinished, so 204.14.123.1
+              also shows 204.14.123.128/25. Press Enter to read the field
+              exactly as written and see only the subnet that holds it.
                 denver app                  Denver's app devices
                 10.1.10.25                  devices serving that address
                 denver chicago dmz, app     dmz and app devices in either site
@@ -238,8 +242,9 @@ $script:HtmlHead = @'
                 -cloud -iq                  sites only
                 denver -dmz                 Denver without its dmz devices
                 appleton "app"              Appleton's app devices
-              Alt+F focuses the filter, Alt+C clears it, Escape clears and
-              returns to All. / and Ctrl+K also focus the filter.
+              Enter commits the filter (exact addresses). Alt+F focuses
+              it, Alt+C clears it, Escape clears and returns to All. / and
+              Ctrl+K also focus it.
   Layout      Cards size to the longest name and fill the width. The header
               grows to as many button rows as needed.
   ============================================================================
@@ -426,9 +431,8 @@ function flatTable(c) {
   return `<table><tbody>${body}</tbody></table>`;
 }
 
-/* Card wrapper. id must match the nav button's data-id. */
-/* Card wrapper. data-group lets the filter select a whole group by name
-   (sites, cloud, bigiq). */
+/* Card wrapper. id must match the nav button's data-id. data-group lets the
+   filter select a whole group by name (sites, cloud, bigiq). */
 function panel(id, title, sub, inner, group) {
   return `<div class="device" id="${esc(id)}" data-group="${esc(group)}"><h3>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h3>${inner}</div>`;
 }
@@ -439,7 +443,6 @@ const live = x => x && x.enabled !== false;
 /* Assemble the data registries into one object. */
 const TOPOLOGY = { get sites() { return SITES; }, get cloud() { return CLOUD; }, get bigiq() { return BIGIQ; } };
 
-/* Build the cards and nav buttons from the data. Called once on load. */
 /* Set every card to one width, sized to the longest device name or card title
    so cards are consistent and no wider than their content. Clamped 240-480px. */
 function sizeCards() {
@@ -455,6 +458,7 @@ function sizeCards() {
   document.documentElement.style.setProperty('--card', card + 'px');
 }
 
+/* Build the cards and nav buttons from the data. */
 function render() {
   const t = TOPOLOGY;
   const sites = (t.sites || []).filter(live);
@@ -524,8 +528,9 @@ document.getElementById('nav').addEventListener('click', e => {
 
 /* ============================================================================
    FILTER AND SELECTION
-   Two inputs combine: the selected button (one card or all) and the filter
-   text. apply() recomputes visibility for every row, band, card and group.
+   Two inputs combine: the selected buttons (All, or one or more cards) and
+   the filter text. apply() recomputes visibility for every row, band, card
+   and group.
    ============================================================================ */
 
 /* Selection is a set of data-ids. It contains 'all' (everything) or one or
@@ -543,43 +548,78 @@ function toggleSelect(id) {
    Lets "site 2", "site2" and "Site-2" all match "site2-...". */
 const norm = t => t.toLowerCase().replace(/[\s_-]+/g, '');
 
-/* IPv4 terms. A query word that is an address or a cidr also matches a row
-   through its data-n subnets: an address matches a subnet that contains it,
-   a cidr matches a subnet that overlaps it. Text matching still applies, so
-   a device listed by its management IP is found either way. */
-const RX_IP4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/(\d{1,2}))?$/;
-function cidr(t) {
-  const m = RX_IP4.exec(t); if (!m) return null;
-  const o = m.slice(1, 5).map(Number); if (o.some(x => x > 255)) return null;
-  const bits = m[5] === undefined ? 32 : Number(m[5]); if (bits > 32) return null;
-  const ip = ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0;
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return { net: (ip & mask) >>> 0, bits };
+/* IPv4 terms
+   A query word shaped like an IPv4 address, part of one, or a cidr is also
+   matched against each row's subnets (data-n). The word becomes one or more
+   address ranges and a row matches when any of its subnets overlaps one.
+
+   While typing, a word is read as unfinished: its last octet may still grow,
+   so  10.2  covers 10.2.x.x, 10.20-29.x.x and 10.200-255.x.x, and
+   204.14.123.1  covers .1, .10-.19 and .100-.199. The page therefore only
+   narrows as digits are added. A one-digit mask of 1 to 3 is ignored until
+   its second digit arrives, since /2 on the way to /25 would match nearly
+   everything.
+
+   Enter commits the field: every word is then read exactly as written.
+   204.14.123.1  is that one address and matches only the subnet containing
+   it;  10.2  is 10.2.0.0/16. Editing the field returns to typing mode. */
+const RX_IP4_TERM = /^(\d{1,3}(?:\.\d{1,3}){0,3})(\.?)(?:\/(\d{0,2}))?$/;
+function ipTerm(t, exact) {
+  const m = RX_IP4_TERM.exec(t); if (!m) return null;
+  const octs = m[1].split('.'), n = octs.length, mask = m[3];
+  if (octs.some(o => Number(o) > 255)) return null;
+  if (n === 4 && m[2]) return null;                 /* 1.2.3.4. is not an address */
+  if (mask !== undefined && n < 4) return null;     /* a mask needs four octets   */
+  const val = octs.reduce((a, o) => a * 256 + Number(o), 0);
+  const size = Math.pow(256, 4 - n);                /* addresses under n octets   */
+  const dotted = n > 1 || m[2] === '.' || mask !== undefined;
+  const q = { strict: exact && dotted, masked: false, text: octs.join('.'), full: n === 4, ranges: [] };
+
+  if (mask !== undefined) {
+    const pending = mask === '' || (!exact && mask.length === 1 && mask >= '1' && mask <= '3');
+    if (!pending) {
+      const bits = Number(mask); if (bits > 32) return null;
+      const span = Math.pow(2, 32 - bits), start = Math.floor(val / span) * span;
+      q.masked = true; q.ranges.push([start, start + span - 1]);
+      return q;
+    }
+    q.ranges.push([val, val]);                      /* the slash ends the address */
+    return q;
+  }
+
+  const last = octs[n - 1], v = Number(last), base = val - v;
+  const add = (lo, hi) => q.ranges.push([(base + lo) * size, (base + Math.min(hi, 255) + 1) * size - 1]);
+  add(v, v);
+  if (!exact && m[2] !== '.' && last[0] !== '0') {  /* the last octet may still grow */
+    if (last.length < 3 && v * 10 <= 255) add(v * 10, v * 10 + 9);
+    if (last.length < 2 && v * 100 <= 255) add(v * 100, v * 100 + 99);
+  }
+  return q;
 }
-const overlaps = (a, b) => {
-  const bits = Math.min(a.bits, b.bits);
-  const mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
-  return ((a.net & mask) >>> 0) === ((b.net & mask) >>> 0);
-};
-/* A partly typed address (10. or 10.2 or 10.2.11) is a prefix of the subnet
-   text, so the page narrows as each digit is typed. A complete address or
-   cidr is also tested for containment or overlap. */
-const RX_IP4_PART = /^\d{1,3}(?:\.\d{0,3}){0,3}(?:\/\d{0,2})?$/;
-function netHit(tr, t) {
-  const n = tr.dataset.n; if (!n || !RX_IP4_PART.test(t)) return false;
-  const nets = n.split(' ');
-  if (nets.some(x => x.startsWith(t))) return true;
-  const q = cidr(t); if (!q) return false;
-  return nets.some(x => { const c = cidr(x); return c && overlaps(c, q); });
+
+/* A row's subnets as [first, last] address pairs, parsed once per row. */
+const NETS = new WeakMap();
+function netsOf(tr) {
+  if (!NETS.has(tr)) {
+    NETS.set(tr, (tr.dataset.n || '').split(' ').map(x => ipTerm(x, true)).filter(c => c && c.full).map(c => c.ranges[0]));
+  }
+  return NETS.get(tr);
 }
+const netHit = (tr, q) => netsOf(tr).some(([a, b]) => q.ranges.some(([x, y]) => x <= b && a <= y));
+
+/* Text match for a committed address: a whole word of the row key, or a
+   word beginning with the typed octets, so 10.1.1.1 does not find a device
+   listed as 10.1.1.15. */
+const wordHit = (tr, q) => !q.masked && (tr.dataset.k || '').split(/\s+/).some(w => w === q.text || (!q.full && w.startsWith(q.text + '.')));
+
+/* True once Enter is pressed in the filter; cleared by any edit. */
+let committed = false;
 
 function apply() {
   /* The query is a comma-separated list of groups; a row matches if it
      satisfies ANY group (OR across commas). Within a group, space-separated
      terms must ALL be found (AND within a group). So  nash app  narrows to
-     Nashville's app rows, while  mumbai, cairo  gathers both cities.
-     Each term matches the row key or the card title, so a title word (a site
-     name) can be one of the AND terms. */
+     Nashville's app rows, while  mumbai, cairo  gathers both cities. */
   const raw = document.getElementById('filter').value;
   /* A card's scope key is its title plus its group name, so  sites, cloud,
      bigiq (or iq)  select a whole group the same way a site name selects
@@ -599,6 +639,8 @@ function apply() {
        "word"        forces a row term even when the word occurs in a card
                      title, so  "app"  finds app rows when a site is named
                      Appleton. Single quotes work the same way.
+       a.b.c.d       IPv4 address, part of one, or cidr: also matched against
+                     the row's subnets. See ipTerm above.
      Examples
        denver app                    Denver's app rows
        denver chicago dmz, app       dmz and app rows in either site
@@ -629,6 +671,9 @@ function apply() {
     return { sites: sites.length ? sites : carry, terms };
   });
   const q = parsed.length > 0 || negSites.length > 0 || negRows.length > 0;
+  /* Each distinct word is tested for IPv4 shape once per pass. */
+  const ipCache = new Map();
+  const ip = t => { if (!ipCache.has(t)) ipCache.set(t, ipTerm(t, committed)); return ipCache.get(t); };
   /* Selected buttons and filter scope words add together: a card shows if
      it is selected or named in the filter, so three selected sites plus
      cloud iq  show all five cards. Row terms narrow every card in that set;
@@ -654,7 +699,10 @@ function apply() {
           currentBand = tr; kept = 0; continue;
         }
         const key = norm(tr.dataset.k || '');
-        const has = t => key.includes(t) || netHit(tr, t);
+        const has = t => {
+          const q = ip(t);
+          return (q && q.strict ? wordHit(tr, q) : key.includes(t)) || (!!q && netHit(tr, q));
+        };
         const hit = !excluded
           && !negRows.some(has)
           && (!parsed.length || mine.some(g => g.terms.every(has)));
@@ -670,15 +718,18 @@ function apply() {
 }
 
 const filter = document.getElementById('filter');
-filter.addEventListener('input', apply);
+filter.addEventListener('input', () => { committed = false; apply(); });
+filter.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); committed = true; apply(); }
+});
+function clearFilter() { filter.value = ''; committed = false; selectOnly('all'); apply(); }
 
-/* Keyboard: Escape clears the filter and returns to All.
-   "/" or Ctrl+K (Cmd+K) focuses the filter box. */
+/* Keyboard: Alt+F focuses the filter and Alt+C clears it. Escape clears,
+   returns to All and leaves the box. "/" and Ctrl+K (Cmd+K) also focus. */
 document.addEventListener('keydown', e => {
-  /* Alt+F focuses the filter, Alt+C clears it. Escape also clears and blurs. */
   if (e.altKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); filter.focus(); filter.select(); return; }
-  if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); filter.value = ''; selectOnly('all'); apply(); filter.focus(); return; }
-  if (e.key === 'Escape') { filter.value = ''; selectOnly('all'); apply(); filter.blur(); return; }
+  if (e.altKey && (e.key === 'c' || e.key === 'C')) { e.preventDefault(); clearFilter(); filter.focus(); return; }
+  if (e.key === 'Escape') { clearFilter(); filter.blur(); return; }
   if ((e.key === '/' && document.activeElement !== filter) || (e.key === 'k' && (e.ctrlKey || e.metaKey))) {
     e.preventDefault(); filter.focus(); filter.select();
   }
@@ -699,6 +750,7 @@ $script:ConfTemplate = @'
 #
 # id        Tag for a block (site1, aws, bigiq). Lowercase letters, digits,
 #           hyphens. Blocks appear on the page in order of first appearance.
+#           all, main, nav and filter are reserved.
 #
 # category  name      Label shown on the page. Required, once per block.
 #           type      site | cloud | bigiq. Default site.
@@ -979,6 +1031,15 @@ function Confirm-Overwrite {
     return (Read-YesNo "$Path exists. Overwrite?")
 }
 
+# Full path for a file argument, resolved against the PowerShell location.
+# .NET file calls resolve relative paths against the process directory, which
+# Set-Location does not change, so every path is made absolute before use.
+function Resolve-FullPath {
+    param([string]$Path)
+    if (-not $Path) { return $Path }
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 function Write-TextFile {
     param([string]$Path, [string]$Content)
     $dir = Split-Path -Parent $Path
@@ -999,7 +1060,8 @@ $script:Categories = @{
     bigiq = @('type', 'name', 'enabled', 'device', 'subnet')
 }
 $script:AllCategories = @('type', 'name', 'enabled', 'gtm', 'vcmp', 'tenant', 'host', 'gtmdev', 'device', 'subnet')
-$script:ReservedIds   = @('all')
+# Ids the page already uses: the All button and its own header elements.
+$script:ReservedIds   = @('all', 'main', 'nav', 'filter')
 
 $script:Rx = @{
     Id    = '^[a-z][a-z0-9-]*$'
@@ -1056,7 +1118,9 @@ function ConvertTo-Device {
     if ($Value.StartsWith('=')) {
         $Errors.Add([Note]::new($Line, "${What}: empty display name before '='")); return $null
     }
-    if ($Value -match '^(?<n>[^=]+)=(?<t>.+)$') {
+    # A bare URL may carry '=' in its query string; only split off a display
+    # name when the whole value is not itself a URL.
+    if ($Value -notmatch $script:Rx.Url -and $Value -match '^(?<n>[^=]+)=(?<t>.+)$') {
         $display = $Matches.n.Trim()
         $target  = $Matches.t.Trim()
     }
@@ -1110,7 +1174,7 @@ function Read-Template {
             $errors.Add([Note]::new($lineNo, "id '$id' must be lowercase letters, digits and hyphens, starting with a letter")); continue
         }
         if ($id -in $script:ReservedIds) {
-            $errors.Add([Note]::new($lineNo, "id '$id' is reserved")); continue
+            $errors.Add([Note]::new($lineNo, "id '$id' is used by the page itself; choose another (reserved: $($script:ReservedIds -join ', '))")); continue
         }
         if ($cat -notin $script:AllCategories) {
             $errors.Add([Note]::new($lineNo, "unknown category '$($f[1])'; valid: $($script:AllCategories -join ' ')")); continue
@@ -1181,6 +1245,7 @@ function Read-Template {
                     if (-not $p -and $c -match '\s') { $errors.Add([Note]::new($lineNo, "'$c' looks like several cidrs; separate them with commas")); continue }
                     if (-not $p) { $errors.Add([Note]::new($lineNo, "'$c' is not IPv4 cidr notation (a.b.c.d/nn); IPv6 is not supported")); continue }
                     if ($p.hostBits) { $warnings.Add([Note]::new($lineNo, "'$c' has host bits set; using $($p.text)")) }
+                    if ($p.text.EndsWith('/0')) { $warnings.Add([Note]::new($lineNo, "'$c' covers every address; this device will match any IP search")) }
                     if ($p.text -notin $cidrs) { $cidrs.Add($p.text) }
                 }
                 if ($cidrs.Count) { $b.subnets.Add(@{ ref = $val; cidrs = $cidrs; line = $lineNo }) }
@@ -1254,9 +1319,20 @@ function Read-Template {
 
 $script:JsStr = '(?:''(?<s>(?:\\.|[^''\\])*)''|"(?<d>(?:\\.|[^"\\])*)")'
 
+# The same string without captures, and "anything that is not a bracket,
+# brace or quote". Lists and entries are scanned as runs of these so that a
+# ] or } inside a quoted name does not end the list or the entry early.
+$script:JsStrNc = '(?:''(?:\\.|[^''\\])*''|"(?:\\.|[^"\\])*")'
+$script:JsList  = "\[(?<list>(?:$($script:JsStrNc)|[^\[\]'`"]|\[(?:$($script:JsStrNc)|[^\[\]'`"])*\])*)\]"
+$script:JsEntry = "\{(?:$($script:JsStrNc)|[^{}'`"]|\[(?:$($script:JsStrNc)|[^\[\]'`"])*\])*\}"
+
 function ConvertFrom-JsString {
     param([string]$Text)
-    return [regex]::Replace($Text, '\\(.)', '$1')
+    return [regex]::Replace($Text, '\\(?:x(?<h>[0-9A-Fa-f]{2})|u(?<h>[0-9A-Fa-f]{4})|(?<c>.))', {
+        param($m)
+        if ($m.Groups['h'].Success) { return [string][char][Convert]::ToInt32($m.Groups['h'].Value, 16) }
+        return $m.Groups['c'].Value
+    })
 }
 
 function Get-JsField {
@@ -1274,17 +1350,17 @@ function Get-JsList {
     # Entries of  key:[ { ... }, { ... } ]  as hashtables of their string fields.
     param([string]$Body, [string]$Key)
     $out = [System.Collections.Generic.List[hashtable]]::new()
-    $m = [regex]::Match($Body, "(?<![\w$])$Key\s*:\s*\[(?<list>(?:[^\[\]]|\[[^\[\]]*\])*)\]")
+    $m = [regex]::Match($Body, "(?<![\w$])$Key\s*:\s*$($script:JsList)")
     if (-not $m.Success) { return $out }
-    foreach ($e in [regex]::Matches($m.Groups['list'].Value, '\{[^{}]*\}')) {
+    foreach ($e in [regex]::Matches($m.Groups['list'].Value, $script:JsEntry)) {
         $h = @{}
         foreach ($k in 'name', 'fqdn', 'url', 'zone', 'host') {
             $v = Get-JsField -Body $e.Value -Key $k
             if ($null -ne $v) { $h[$k] = [string]$v }
         }
-        $n = [regex]::Match($e.Value, '(?<![\w$])nets\s*:\s*\[(?<l>[^\]]*)\]')
+        $n = [regex]::Match($e.Value, "(?<![\w$])nets\s*:\s*$($script:JsList)")
         if ($n.Success) {
-            $h['nets'] = @([regex]::Matches($n.Groups['l'].Value, $script:JsStr) | ForEach-Object {
+            $h['nets'] = @([regex]::Matches($n.Groups['list'].Value, $script:JsStr) | ForEach-Object {
                 if ($_.Groups['s'].Success) { ConvertFrom-JsString $_.Groups['s'].Value } else { ConvertFrom-JsString $_.Groups['d'].Value } })
         }
         if ($h.Count) { $out.Add($h) }
@@ -1322,6 +1398,16 @@ function Read-HtmlPage {
     $title = [System.Net.WebUtility]::HtmlDecode($title).Trim()
 
     $bar = { param($v) if ($v -match '\|') { $notes.Add("'$v' contains | which the template cannot hold; edit it afterwards"); $v -replace '\|', '/' } else { $v } }
+    # A shown name is written as Name=target, so it can hold neither | nor =.
+    $clean = {
+        param($d)
+        if ($d.ContainsKey('name') -and $d.name -match '[|=]') {
+            $msg = "device name '$($d.name)' contains | or = which the template cannot hold; edit it afterwards"
+            if ($msg -notin $notes) { $notes.Add($msg) }
+            $d.name = $d.name -replace '[|=]', '/'
+        }
+        $d
+    }
 
     [void]$sb.AppendLine("# Recovered from $(Split-Path -Leaf $Path) $(Get-Date -Format 'yyyy-MM-dd HH:mm')")
     [void]$sb.AppendLine('# Format: id|category|value. See Export Template for the full description.')
@@ -1332,8 +1418,11 @@ function Read-HtmlPage {
         if (-not $m.Success) { continue }
         $body = $m.Groups['body'].Value
         $type = switch ($m.Groups['reg'].Value) { 'SITES' { 'site' } 'CLOUD' { 'cloud' } default { 'bigiq' } }
-        $id   = Get-JsField -Body $body -Key 'id'
-        $name = Get-JsField -Body $body -Key 'name'
+        # Block fields are read with the device lists removed, so a block that
+        # lists its devices before its own name still reports the right one.
+        $top  = [regex]::Replace($body, $script:JsList, '[]')
+        $id   = Get-JsField -Body $top -Key 'id'
+        $name = Get-JsField -Body $top -Key 'name'
         if (-not $id) { $notes.Add("a $type block with no id was skipped"); continue }
         $count++
 
@@ -1341,17 +1430,17 @@ function Read-HtmlPage {
         [void]$sb.AppendLine("# ---- $name")
         if ($type -ne 'site') { [void]$sb.AppendLine("$id|type|$type") }
         [void]$sb.AppendLine("$id|name|$(& $bar $name)")
-        $enabled = Get-JsField -Body $body -Key 'enabled'
+        $enabled = Get-JsField -Body $top -Key 'enabled'
         [void]$sb.AppendLine("$id|enabled|$(if ($enabled -eq $false) { 'false' } else { 'true' })")
         if ($type -ne 'bigiq') {
-            $gtm = Get-JsField -Body $body -Key 'gtmEnabled'
+            $gtm = Get-JsField -Body $top -Key 'gtmEnabled'
             [void]$sb.AppendLine("$id|gtm|$(if ($gtm -eq $true) { 'true' } else { 'false' })")
         }
         if ($type -eq 'site') {
-            $hostsOn = Get-JsField -Body $body -Key 'hostsEnabled'
+            $hostsOn = Get-JsField -Body $top -Key 'hostsEnabled'
             if ($hostsOn -eq $false) { [void]$sb.AppendLine("$id|vcmp|false") }
-            foreach ($d in (Get-JsList -Body $body -Key 'hosts'))  { [void]$sb.AppendLine("$id|host|$(ConvertTo-ConfValue $d)") }
-            foreach ($d in (Get-JsList -Body $body -Key 'guests')) {
+            foreach ($d in (Get-JsList -Body $body -Key 'hosts' | ForEach-Object { & $clean $_ }))  { [void]$sb.AppendLine("$id|host|$(ConvertTo-ConfValue $d)") }
+            foreach ($d in (Get-JsList -Body $body -Key 'guests' | ForEach-Object { & $clean $_ })) {
                 $zone = if ($d.ContainsKey('zone') -and $d.zone) { & $bar $d.zone }
                         else { $notes.Add("tenant '$($d['name'])' in $id has no zone; placed in 'Unassigned'"); 'Unassigned' }
                 $line = "$id|tenant|$zone|$(ConvertTo-ConfValue $d)"
@@ -1360,14 +1449,14 @@ function Read-HtmlPage {
             }
         }
         else {
-            foreach ($d in (Get-JsList -Body $body -Key 'devices')) { [void]$sb.AppendLine("$id|device|$(ConvertTo-ConfValue $d)") }
+            foreach ($d in (Get-JsList -Body $body -Key 'devices' | ForEach-Object { & $clean $_ })) { [void]$sb.AppendLine("$id|device|$(ConvertTo-ConfValue $d)") }
         }
         if ($type -ne 'bigiq') {
-            foreach ($d in (Get-JsList -Body $body -Key 'gtm')) { [void]$sb.AppendLine("$id|gtmdev|$(ConvertTo-ConfValue $d)") }
+            foreach ($d in (Get-JsList -Body $body -Key 'gtm' | ForEach-Object { & $clean $_ })) { [void]$sb.AppendLine("$id|gtmdev|$(ConvertTo-ConfValue $d)") }
         }
         foreach ($k in 'hosts', 'guests', 'devices', 'gtm') {
-            foreach ($d in (Get-JsList -Body $body -Key $k)) {
-                if ($d.ContainsKey('nets') -and $d.nets.Count) { [void]$sb.AppendLine("$id|subnet|$(& $bar $d['name'])|$($d.nets -join ',')") }
+            foreach ($d in (Get-JsList -Body $body -Key $k | ForEach-Object { & $clean $_ })) {
+                if ($d.ContainsKey('nets') -and $d.nets.Count) { [void]$sb.AppendLine("$id|subnet|$($d['name'])|$($d.nets -join ',')") }
             }
         }
     }
@@ -1379,7 +1468,8 @@ function Read-HtmlPage {
 
 #region HTML generation --------------------------------------------------------
 
-function ConvertTo-JsString { param([string]$s) return "'" + ($s -replace '\\', '\\' -replace "'", "\'") + "'" }
+# '<' is written as \x3c so a value can never close its <script> block.
+function ConvertTo-JsString { param([string]$s) return "'" + ($s -replace '\\', '\\' -replace "'", "\'" -replace '<', '\x3c') + "'" }
 function ConvertTo-JsBool   { param([bool]$v) if ($v) { 'true' } else { 'false' } }
 
 function ConvertTo-JsDevice {
@@ -1469,6 +1559,7 @@ function Invoke-Recover {
 
     try { Write-TextFile $OutputFile $page.text } catch { Write-Fail $_.Exception.Message; return 2 }
     Write-Line ("Wrote {0} ({1} block(s))" -f $OutputFile, $page.count)
+    if ($page.title) { Write-Line "Page title: $($page.title)" }
 
     # The recovered file must pass the same checks as a hand-written one.
     return (Invoke-Build -InputFile $OutputFile -OutputFile '' -Title '' -Overwrite $true -ValidateOnly $true)
@@ -1664,8 +1755,8 @@ if ($Interactive -or ($noArgs -and $console)) {
     exit (Invoke-Menu -Title $Title)
 }
 
-if (-not $InputFile)  { $InputFile  = $script:DefaultIn }
-if (-not $OutputFile) { $OutputFile = $script:DefaultOut }
+$InputFile  = if ($InputFile)  { Resolve-FullPath $InputFile }  else { $script:DefaultIn }
+$OutputFile = if ($OutputFile) { Resolve-FullPath $OutputFile } else { $script:DefaultOut }
 
 switch ($PSCmdlet.ParameterSetName) {
     'Export'   { exit (Invoke-Export -Path $InputFile -Overwrite ([bool]$Force)) }
