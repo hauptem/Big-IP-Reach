@@ -41,7 +41,7 @@ SITES.push({ id:'site01', name:'Ashburn', enabled:true,
 - To change a site, edit the names and FQDNs inside its block.
 - To add a site, copy a whole block including both `<script>` tags, paste it after the last site, and change the `id` in both places (the `/* site: ... */` comment and the `id:` field) along with the name and devices. Each `id` must be unique.
 - To hide a block without deleting it, set `enabled:false`.
-- To make a device findable by IP address, add `nets:['a.b.c.d/nn', ...]` to its entry. Subnets are never displayed.
+- To make a device findable by IP address, add `nets:['a.b.c.d/nn', ...]` to its entry.
 - Leave everything below the `RENDER (do not edit)` marker alone.
 
 Save the file and open it in a browser. Because each block is separate, a typing mistake in one block removes only that card, and a red notice at the top of the page names the block that failed. The browser console (F12) gives the line.
